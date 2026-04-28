@@ -2,6 +2,7 @@
   "name": "api-contract",
   "version": "0.1.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "scripts": {
     "generate": "echo \"OpenAPI code generation is not configured yet\"",
     "lint": "echo \"No api-contract lint configured yet\"",

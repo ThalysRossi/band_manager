@@ -2,6 +2,7 @@
   "name": "band-manager",
   "version": "0.1.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev:web": "pnpm --filter web dev",

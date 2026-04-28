@@ -52,6 +52,14 @@ cd apps/api && go test ./...
 - API foundation exposes `GET /healthz`.
 - Frontend foundation renders the initial app shell with Portuguese/English translation support.
 
+## License
+
+Copyright (C) 2026 Band Manager contributors.
+
+Band Manager is licensed under the GNU General Public License version 3 only. See `LICENSE` for the full license text.
+
+Third-party dependency license notes are tracked in `docs/legal/third-party-notices.md`.
+
 ## Original planning bundle
 
 - `initial_codex_prompt.md`: prompt to give Codex before implementation.

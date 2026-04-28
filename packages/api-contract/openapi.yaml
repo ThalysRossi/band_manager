@@ -10,12 +10,12 @@ paths:
       operationId: getHealth
       summary: Get API health status
       responses:
-        "200":
+        '200':
           description: API is healthy
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthResponse"
+                $ref: '#/components/schemas/HealthResponse'
 components:
   schemas:
     HealthResponse:

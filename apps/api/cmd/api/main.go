@@ -1,0 +1,57 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/thalys/band-manager/apps/api/internal/platform/config"
+	"github.com/thalys/band-manager/apps/api/internal/platform/logger"
+	httpapi "github.com/thalys/band-manager/apps/api/internal/transport/http"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	appConfig, err := config.LoadFromEnvironment()
+	if err != nil {
+		slog.Error("configuration failed", "error", err)
+		os.Exit(1)
+	}
+
+	appLogger := logger.New(appConfig.Environment)
+	server := &http.Server{
+		Addr:              appConfig.Address,
+		Handler:           httpapi.NewRouter(appConfig, appLogger),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		appLogger.Info("api server starting", "address", appConfig.Address, "environment", appConfig.Environment)
+		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			appLogger.Error("api server failed", "error", serveErr)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		appLogger.Error("api server shutdown failed", "error", err)
+		os.Exit(1)
+	}
+
+	appLogger.Info("api server stopped")
+}

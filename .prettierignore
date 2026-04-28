@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+.vite
+*.tsbuildinfo
+apps/api/bin
+AGENTS.md
+initial_codex_prompt.md
+plans.md
+roadmap.md
+docs/spikes/mercadopago.md

@@ -1,0 +1,9 @@
+{
+  "name": "config",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "echo \"No config lint configured yet\"",
+    "test": "echo \"No config tests configured yet\""
+  }
+}

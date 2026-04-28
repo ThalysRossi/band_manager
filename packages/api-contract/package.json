@@ -1,0 +1,10 @@
+{
+  "name": "api-contract",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "generate": "echo \"OpenAPI code generation is not configured yet\"",
+    "lint": "echo \"No api-contract lint configured yet\"",
+    "test": "echo \"No api-contract tests configured yet\""
+  }
+}

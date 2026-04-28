@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.vite/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+apps/api/bin/
+apps/api/tmp/
+*.test
+
+.DS_Store

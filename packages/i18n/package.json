@@ -1,0 +1,11 @@
+{
+  "name": "i18n",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "lint": "echo \"No i18n lint configured yet\"",
+    "test": "echo \"No i18n tests configured yet\""
+  }
+}

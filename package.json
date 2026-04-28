@@ -1,0 +1,21 @@
+{
+  "name": "band-manager",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "cd apps/api && go run ./cmd/api",
+    "lint": "pnpm -r lint",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter web cypress:run",
+    "audit": "pnpm audit",
+    "codegen": "pnpm --filter api-contract generate",
+    "ci": "pnpm lint && pnpm format && pnpm test && pnpm audit"
+  },
+  "devDependencies": {
+    "prettier": "3.4.2"
+  }
+}

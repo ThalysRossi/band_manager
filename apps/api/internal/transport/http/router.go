@@ -7,17 +7,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
 	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
+	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 	"github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
 	inventoryhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/inventory"
+	merchboothhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
 )
 
 type Dependencies struct {
-	Authenticator       session.Authenticator
-	AccountRepository   accounts.BandAccountRepository
-	InventoryRepository applicationinventory.Repository
+	Authenticator        session.Authenticator
+	AccountRepository    accounts.BandAccountRepository
+	InventoryRepository  applicationinventory.Repository
+	MerchBoothRepository applicationmerchbooth.Repository
 }
 
 func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dependencies) http.Handler {
@@ -39,6 +42,10 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 	router.Delete("/inventory/products/{productID}", inventoryHandler.SoftDeleteProduct)
 	router.Put("/inventory/variants/{variantID}", inventoryHandler.UpdateVariant)
 	router.Delete("/inventory/variants/{variantID}", inventoryHandler.SoftDeleteVariant)
+
+	merchBoothHandler := merchboothhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.MerchBoothRepository, appLogger)
+	router.Get("/merch-booth/items", merchBoothHandler.ListBoothItems)
+	router.Post("/merch-booth/checkouts/cash", merchBoothHandler.CreateCashCheckout)
 
 	return router
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	postgresaccount "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/account"
 	postgresinventory "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/inventory"
+	postgresmerchbooth "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/infrastructure/supabase"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 	"github.com/thalys/band-manager/apps/api/internal/platform/logger"
@@ -45,12 +46,14 @@ func main() {
 
 	accountRepository := postgresaccount.NewRepository(databasePool)
 	inventoryRepository := postgresinventory.NewRepository(databasePool)
+	merchBoothRepository := postgresmerchbooth.NewRepository(databasePool)
 	server := &http.Server{
 		Addr: appConfig.Address,
 		Handler: httpapi.NewRouter(appConfig, appLogger, httpapi.Dependencies{
-			Authenticator:       authenticator,
-			AccountRepository:   accountRepository,
-			InventoryRepository: inventoryRepository,
+			Authenticator:        authenticator,
+			AccountRepository:    accountRepository,
+			InventoryRepository:  inventoryRepository,
+			MerchBoothRepository: merchBoothRepository,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,

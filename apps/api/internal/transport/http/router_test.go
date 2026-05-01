@@ -10,6 +10,7 @@ import (
 
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
 	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
+	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 )
@@ -110,10 +111,21 @@ func (repository testInventoryRepository) SoftDeleteVariant(ctx context.Context,
 	return nil
 }
 
+type testMerchBoothRepository struct{}
+
+func (repository testMerchBoothRepository) ListBoothItems(ctx context.Context, query applicationmerchbooth.ListBoothItemsQuery) ([]applicationmerchbooth.BoothItem, error) {
+	return nil, nil
+}
+
+func (repository testMerchBoothRepository) CreateCashCheckout(ctx context.Context, command applicationmerchbooth.CreateCashCheckoutCommand) (applicationmerchbooth.Sale, error) {
+	return applicationmerchbooth.Sale{}, nil
+}
+
 func testDependencies() Dependencies {
 	return Dependencies{
-		Authenticator:       testAuthenticator{},
-		AccountRepository:   testAccountRepository{},
-		InventoryRepository: testInventoryRepository{},
+		Authenticator:        testAuthenticator{},
+		AccountRepository:    testAccountRepository{},
+		InventoryRepository:  testInventoryRepository{},
+		MerchBoothRepository: testMerchBoothRepository{},
 	}
 }

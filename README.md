@@ -1,5 +1,7 @@
 # Band Manager
 
+This is a POC that will be discarded after validation in favour of organic hand rolled code. For now, I let Sam take the wheel and gave up reviewing or trying to steer the agent in a better direction.
+
 Band Manager is a mobile-first web app for Brazilian underground bands to manage merch inventory and merch booth sales.
 
 The alpha is organized as a monorepo with a React/Vite frontend, Go API backend, shared OpenAPI contract, and local PostgreSQL/Redis dependencies.
@@ -51,6 +53,7 @@ cd apps/api && go test ./...
 - Monorepo skeleton is in place.
 - API foundation exposes `GET /healthz`.
 - Frontend foundation renders the initial app shell with Portuguese/English translation support.
+- Auth/account foundation defines owner signup contracts, alpha role rules, and account tables.
 
 ## License
 

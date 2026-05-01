@@ -76,6 +76,55 @@ a {
   font-size: 1rem;
 }
 
+.auth-panel {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 16px;
+}
+
+.auth-panel h2,
+.auth-panel p {
+  margin: 0;
+}
+
+.auth-panel form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-panel label {
+  display: grid;
+  gap: 6px;
+  color: #3c453b;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.auth-panel input {
+  min-height: 44px;
+  border: 1px solid #c8c9bf;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #fffffc;
+  color: #17201a;
+  font: inherit;
+}
+
+.auth-panel button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: #11785b;
+  color: #fffffc;
+  font: inherit;
+  font-weight: 750;
+}
+
+.auth-panel a {
+  color: #11785b;
+  font-weight: 650;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;

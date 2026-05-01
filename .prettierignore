@@ -4,6 +4,7 @@ coverage
 .vite
 *.tsbuildinfo
 apps/api/bin
+apps/api/migrations/*.sql
 AGENTS.md
 initial_codex_prompt.md
 plans.md

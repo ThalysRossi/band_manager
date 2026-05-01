@@ -16,7 +16,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /auth/signup:
+    post:
+      operationId: signupOwner
+      summary: Create the alpha owner account and band
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupOwnerRequest'
+      responses:
+        '201':
+          description: Owner account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAccountResponse'
+        '400':
+          description: Invalid signup request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Account or band already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /me:
+    get:
+      operationId: getCurrentAccount
+      summary: Get the authenticated user and active band
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current account context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAccountResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      description: Unique key scoped by band and operation for mutating requests.
   schemas:
     HealthResponse:
       type: object
@@ -27,3 +91,77 @@ components:
           type: string
           enum:
             - ok
+    SignupOwnerRequest:
+      type: object
+      required:
+        - email
+        - bandName
+        - bandTimezone
+      properties:
+        email:
+          type: string
+          format: email
+          example: really_awesome_band@email.com
+        bandName:
+          type: string
+          minLength: 1
+        bandTimezone:
+          type: string
+          minLength: 1
+          example: America/Recife
+    CurrentAccountResponse:
+      type: object
+      required:
+        - user
+        - activeBand
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        activeBand:
+          $ref: '#/components/schemas/BandMembership'
+    User:
+      type: object
+      required:
+        - id
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+    BandMembership:
+      type: object
+      required:
+        - bandId
+        - bandName
+        - role
+        - canWrite
+      properties:
+        bandId:
+          type: string
+          format: uuid
+        bandName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        canWrite:
+          type: boolean
+    Role:
+      type: string
+      enum:
+        - owner
+        - admin
+        - member
+        - viewer
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -11,6 +11,7 @@ import { CalendarDays, ChartNoAxesCombined, Package, Store } from 'lucide-react'
 import type { Locale, TranslationKey } from 'i18n'
 import { translations } from 'i18n'
 
+import { LoginPage, SignupPage } from '../features/auth/AuthPages'
 import { detectLocale } from '../shared/i18n/detectLocale'
 
 type NavigationItem = {
@@ -55,11 +56,25 @@ const calendarRoute = createRoute({
   component: CalendarPage
 })
 
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login',
+  component: LoginRoutePage
+})
+
+const signupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/signup',
+  component: SignupRoutePage
+})
+
 const routeTree = rootRoute.addChildren([
   inventoryRoute,
   merchBoothRoute,
   financialReportsRoute,
-  calendarRoute
+  calendarRoute,
+  loginRoute,
+  signupRoute
 ])
 
 const router = createRouter({ routeTree })
@@ -124,9 +139,20 @@ function CalendarPage() {
   return <WorkspaceHeader titleKey="nav.calendar" />
 }
 
+function LoginRoutePage() {
+  const translate = useTranslate()
+
+  return <LoginPage translate={translate} />
+}
+
+function SignupRoutePage() {
+  const translate = useTranslate()
+
+  return <SignupPage translate={translate} />
+}
+
 function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
-  const locale = detectLocale(window.navigator.language)
-  const translate = createTranslator(locale)
+  const translate = useTranslate()
 
   return (
     <div className="workspace-header">
@@ -134,6 +160,12 @@ function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
       <p>{translate('status.backendReady')}</p>
     </div>
   )
+}
+
+function useTranslate(): (key: TranslationKey) => string {
+  const locale = detectLocale(window.navigator.language)
+
+  return createTranslator(locale)
 }
 
 function createTranslator(locale: Locale): (key: TranslationKey) => string {

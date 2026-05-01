@@ -1,0 +1,1 @@
+When Go package names conflict, stop and evaluate renaming one of the packages. Do not call external services needlessly and awkwardly.

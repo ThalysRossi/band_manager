@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	postgresaccount "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/account"
+	postgresinventory "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/inventory"
 	"github.com/thalys/band-manager/apps/api/internal/infrastructure/supabase"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 	"github.com/thalys/band-manager/apps/api/internal/platform/logger"
@@ -43,11 +44,13 @@ func main() {
 	}
 
 	accountRepository := postgresaccount.NewRepository(databasePool)
+	inventoryRepository := postgresinventory.NewRepository(databasePool)
 	server := &http.Server{
 		Addr: appConfig.Address,
 		Handler: httpapi.NewRouter(appConfig, appLogger, httpapi.Dependencies{
-			Authenticator:     authenticator,
-			AccountRepository: accountRepository,
+			Authenticator:       authenticator,
+			AccountRepository:   accountRepository,
+			InventoryRepository: inventoryRepository,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,

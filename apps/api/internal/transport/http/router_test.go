@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
+	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 )
@@ -83,9 +84,36 @@ func (repository testAccountRepository) GetCurrentAccount(ctx context.Context, q
 	return accounts.OwnerAccount{}, nil
 }
 
+type testInventoryRepository struct{}
+
+func (repository testInventoryRepository) CreateProduct(ctx context.Context, command applicationinventory.CreateProductCommand) (applicationinventory.Product, error) {
+	return applicationinventory.Product{}, nil
+}
+
+func (repository testInventoryRepository) ListInventory(ctx context.Context, query applicationinventory.ListInventoryQuery) ([]applicationinventory.Product, error) {
+	return nil, nil
+}
+
+func (repository testInventoryRepository) UpdateProduct(ctx context.Context, command applicationinventory.UpdateProductCommand) (applicationinventory.Product, error) {
+	return applicationinventory.Product{}, nil
+}
+
+func (repository testInventoryRepository) UpdateVariant(ctx context.Context, command applicationinventory.UpdateVariantCommand) (applicationinventory.Variant, error) {
+	return applicationinventory.Variant{}, nil
+}
+
+func (repository testInventoryRepository) SoftDeleteProduct(ctx context.Context, command applicationinventory.SoftDeleteProductCommand) error {
+	return nil
+}
+
+func (repository testInventoryRepository) SoftDeleteVariant(ctx context.Context, command applicationinventory.SoftDeleteVariantCommand) error {
+	return nil
+}
+
 func testDependencies() Dependencies {
 	return Dependencies{
-		Authenticator:     testAuthenticator{},
-		AccountRepository: testAccountRepository{},
+		Authenticator:       testAuthenticator{},
+		AccountRepository:   testAccountRepository{},
+		InventoryRepository: testInventoryRepository{},
 	}
 }

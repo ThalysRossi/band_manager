@@ -74,6 +74,252 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /inventory:
+    get:
+      operationId: listInventory
+      summary: List active inventory products and variants
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inventory list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /inventory/products:
+    post:
+      operationId: createInventoryProduct
+      summary: Create an inventory product with variants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInventoryProductRequest'
+      responses:
+        '201':
+          description: Inventory product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProduct'
+        '400':
+          description: Invalid inventory request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate product or variant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /inventory/products/{productId}:
+    put:
+      operationId: updateInventoryProduct
+      summary: Update inventory product metadata
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryProductRequest'
+      responses:
+        '200':
+          description: Inventory product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryProduct'
+        '400':
+          description: Invalid inventory request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Inventory product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteInventoryProduct
+      summary: Soft delete an inventory product and its variants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Inventory product deleted
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Inventory product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /inventory/variants/{variantId}:
+    put:
+      operationId: updateInventoryVariant
+      summary: Update inventory variant stock and pricing
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryVariantRequest'
+      responses:
+        '200':
+          description: Inventory variant updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryVariant'
+        '400':
+          description: Invalid inventory request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Inventory variant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate variant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      operationId: deleteInventoryVariant
+      summary: Soft delete an inventory variant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Inventory variant deleted
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Inventory variant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -163,6 +409,186 @@ components:
         - admin
         - member
         - viewer
+    InventoryResponse:
+      type: object
+      required:
+        - products
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryProduct'
+    CreateInventoryProductRequest:
+      allOf:
+        - $ref: '#/components/schemas/InventoryProductRequest'
+        - type: object
+          required:
+            - variants
+          properties:
+            variants:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/InventoryVariantRequest'
+    InventoryProductRequest:
+      type: object
+      required:
+        - name
+        - category
+        - photo
+      properties:
+        name:
+          type: string
+          minLength: 1
+        category:
+          $ref: '#/components/schemas/InventoryCategory'
+        photo:
+          $ref: '#/components/schemas/InventoryPhoto'
+    InventoryVariantRequest:
+      type: object
+      required:
+        - size
+        - colour
+        - price
+        - cost
+        - quantity
+      properties:
+        size:
+          $ref: '#/components/schemas/InventorySize'
+        colour:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        cost:
+          $ref: '#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 0
+    InventoryProduct:
+      type: object
+      required:
+        - id
+        - bandId
+        - name
+        - category
+        - photo
+        - variants
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        bandId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        category:
+          $ref: '#/components/schemas/InventoryCategory'
+        photo:
+          $ref: '#/components/schemas/InventoryPhoto'
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryVariant'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    InventoryVariant:
+      type: object
+      required:
+        - id
+        - productId
+        - size
+        - colour
+        - price
+        - cost
+        - quantity
+        - soldOut
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        size:
+          $ref: '#/components/schemas/InventorySize'
+        colour:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        cost:
+          $ref: '#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 0
+        soldOut:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    InventoryPhoto:
+      type: object
+      required:
+        - objectKey
+        - contentType
+        - sizeBytes
+      properties:
+        objectKey:
+          type: string
+          minLength: 1
+        contentType:
+          type: string
+          minLength: 1
+        sizeBytes:
+          type: integer
+          minimum: 1
+    Money:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          enum:
+            - BRL
+    InventoryCategory:
+      type: string
+      enum:
+        - shirt
+        - hoodie
+        - tote_bag
+        - patch
+        - sticker
+        - vinyl
+        - cd
+        - cassette
+        - accessory
+    InventorySize:
+      type: string
+      enum:
+        - not_applicable
+        - one_size
+        - pp
+        - p
+        - m
+        - g
+        - gg
+        - xgg
     ErrorResponse:
       type: object
       required:

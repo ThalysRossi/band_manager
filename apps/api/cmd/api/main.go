@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	postgresaccount "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/account"
+	"github.com/thalys/band-manager/apps/api/internal/infrastructure/supabase"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 	"github.com/thalys/band-manager/apps/api/internal/platform/logger"
 	httpapi "github.com/thalys/band-manager/apps/api/internal/transport/http"
@@ -26,9 +29,26 @@ func main() {
 	}
 
 	appLogger := logger.New(appConfig.Environment)
+	databasePool, err := pgxpool.New(ctx, appConfig.DatabaseURL)
+	if err != nil {
+		appLogger.Error("database pool creation failed", "error", err)
+		os.Exit(1)
+	}
+	defer databasePool.Close()
+
+	authenticator, err := supabase.NewAuthenticator(appConfig.SupabaseJWTSecret)
+	if err != nil {
+		appLogger.Error("supabase authenticator creation failed", "error", err)
+		os.Exit(1)
+	}
+
+	accountRepository := postgresaccount.NewRepository(databasePool)
 	server := &http.Server{
-		Addr:              appConfig.Address,
-		Handler:           httpapi.NewRouter(appConfig, appLogger),
+		Addr: appConfig.Address,
+		Handler: httpapi.NewRouter(appConfig, appLogger, httpapi.Dependencies{
+			Authenticator:     authenticator,
+			AccountRepository: accountRepository,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

@@ -1,4 +1,4 @@
-package auth
+package accounts
 
 import (
 	"context"
@@ -14,10 +14,14 @@ func TestCreateOwnerAccountValidatesInput(t *testing.T) {
 
 	repository := fakeBandAccountRepository{}
 	input := CreateOwnerAccountInput{
-		Email:        " ",
-		BandName:     "Os Testes",
-		BandTimezone: "America/Recife",
-		CreatedAt:    time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
+		AuthProvider:       "supabase",
+		AuthProviderUserID: "auth_user_1",
+		Email:              " ",
+		BandName:           "Os Testes",
+		BandTimezone:       "America/Recife",
+		IdempotencyKey:     "idem_1",
+		RequestID:          "request_1",
+		CreatedAt:          time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
 	}
 
 	_, err := CreateOwnerAccount(context.Background(), &repository, input)
@@ -41,10 +45,14 @@ func TestCreateOwnerAccountStoresTrimmedOwnerCommand(t *testing.T) {
 		},
 	}
 	input := CreateOwnerAccountInput{
-		Email:        " band@example.com ",
-		BandName:     " Os Testes ",
-		BandTimezone: " America/Recife ",
-		CreatedAt:    createdAt,
+		AuthProvider:       " supabase ",
+		AuthProviderUserID: " auth_user_1 ",
+		Email:              " band@example.com ",
+		BandName:           " Os Testes ",
+		BandTimezone:       " America/Recife ",
+		IdempotencyKey:     " idem_1 ",
+		RequestID:          " request_1 ",
+		CreatedAt:          createdAt,
 	}
 
 	account, err := CreateOwnerAccount(context.Background(), &repository, input)
@@ -58,6 +66,10 @@ func TestCreateOwnerAccountStoresTrimmedOwnerCommand(t *testing.T) {
 
 	if repository.command.Email != "band@example.com" {
 		t.Fatalf("expected trimmed email, got %q", repository.command.Email)
+	}
+
+	if repository.command.AuthProviderUserID != "auth_user_1" {
+		t.Fatalf("expected trimmed auth provider user id, got %q", repository.command.AuthProviderUserID)
 	}
 
 	if repository.command.BandName != "Os Testes" {
@@ -74,15 +86,33 @@ func TestCreateOwnerAccountIncludesContextInRepositoryError(t *testing.T) {
 
 	repository := fakeBandAccountRepository{err: errors.New("database unavailable")}
 	input := CreateOwnerAccountInput{
-		Email:        "band@example.com",
-		BandName:     "Os Testes",
-		BandTimezone: "America/Recife",
-		CreatedAt:    time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
+		AuthProvider:       "supabase",
+		AuthProviderUserID: "auth_user_1",
+		Email:              "band@example.com",
+		BandName:           "Os Testes",
+		BandTimezone:       "America/Recife",
+		IdempotencyKey:     "idem_1",
+		RequestID:          "request_1",
+		CreatedAt:          time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC),
 	}
 
 	_, err := CreateOwnerAccount(context.Background(), &repository, input)
 	if err == nil {
 		t.Fatal("expected repository error")
+	}
+}
+
+func TestGetCurrentAccountValidatesQuery(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{}
+
+	_, err := GetCurrentAccount(context.Background(), &repository, CurrentAccountQuery{
+		AuthProvider:       "supabase",
+		AuthProviderUserID: " ",
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
 	}
 }
 
@@ -98,6 +128,18 @@ func (repository *fakeBandAccountRepository) CreateOwnerAccount(ctx context.Cont
 	}
 
 	repository.command = command
+	if repository.err != nil {
+		return OwnerAccount{}, repository.err
+	}
+
+	return repository.account, nil
+}
+
+func (repository *fakeBandAccountRepository) GetCurrentAccount(ctx context.Context, query CurrentAccountQuery) (OwnerAccount, error) {
+	if ctx == nil {
+		return OwnerAccount{}, errors.New("context is required")
+	}
+
 	if repository.err != nil {
 		return OwnerAccount{}, repository.err
 	}

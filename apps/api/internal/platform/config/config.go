@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Environment    string
-	Address        string
-	AllowedOrigins []string
-	DatabaseURL    string
-	RedisURL       string
+	Environment       string
+	Address           string
+	AllowedOrigins    []string
+	DatabaseURL       string
+	RedisURL          string
+	SupabaseJWTSecret string
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -41,17 +42,23 @@ func LoadFromEnvironment() (Config, error) {
 		return Config{}, err
 	}
 
+	supabaseJWTSecret, err := requiredEnv("SUPABASE_JWT_SECRET")
+	if err != nil {
+		return Config{}, err
+	}
+
 	allowedOrigins, err := parseAllowedOrigins(originsValue)
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		Environment:    environment,
-		Address:        address,
-		AllowedOrigins: allowedOrigins,
-		DatabaseURL:    databaseURL,
-		RedisURL:       redisURL,
+		Environment:       environment,
+		Address:           address,
+		AllowedOrigins:    allowedOrigins,
+		DatabaseURL:       databaseURL,
+		RedisURL:          redisURL,
+		SupabaseJWTSecret: supabaseJWTSecret,
 	}, nil
 }
 

@@ -1,19 +1,22 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
+	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 )
 
 func TestHealthRouteReturnsOK(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouter(testConfig(), slog.Default())
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	response := httptest.NewRecorder()
 
@@ -36,7 +39,7 @@ func TestHealthRouteReturnsOK(t *testing.T) {
 func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 	t.Parallel()
 
-	router := NewRouter(testConfig(), slog.Default())
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
 	request := httptest.NewRequest(http.MethodOptions, "/healthz", nil)
 	request.Header.Set("Origin", "http://localhost:5173")
 	response := httptest.NewRecorder()
@@ -55,10 +58,34 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 
 func testConfig() config.Config {
 	return config.Config{
-		Environment:    "test",
-		Address:        ":8080",
-		AllowedOrigins: []string{"http://localhost:5173"},
-		DatabaseURL:    "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
-		RedisURL:       "redis://localhost:6379/0",
+		Environment:       "test",
+		Address:           ":8080",
+		AllowedOrigins:    []string{"http://localhost:5173"},
+		DatabaseURL:       "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
+		RedisURL:          "redis://localhost:6379/0",
+		SupabaseJWTSecret: "secret",
+	}
+}
+
+type testAuthenticator struct{}
+
+func (authenticator testAuthenticator) Authenticate(ctx context.Context, bearerToken string) (session.AuthenticatedUser, error) {
+	return session.AuthenticatedUser{}, nil
+}
+
+type testAccountRepository struct{}
+
+func (repository testAccountRepository) CreateOwnerAccount(ctx context.Context, command accounts.CreateOwnerAccountCommand) (accounts.OwnerAccount, error) {
+	return accounts.OwnerAccount{}, nil
+}
+
+func (repository testAccountRepository) GetCurrentAccount(ctx context.Context, query accounts.CurrentAccountQuery) (accounts.OwnerAccount, error) {
+	return accounts.OwnerAccount{}, nil
+}
+
+func testDependencies() Dependencies {
+	return Dependencies{
+		Authenticator:     testAuthenticator{},
+		AccountRepository: testAccountRepository{},
 	}
 }

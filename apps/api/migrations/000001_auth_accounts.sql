@@ -55,7 +55,8 @@ CREATE TABLE audit_logs (
 
 CREATE TABLE idempotency_records (
     id UUID PRIMARY KEY,
-    band_id UUID NOT NULL REFERENCES bands (id),
+    scope_id TEXT NOT NULL,
+    band_id UUID REFERENCES bands (id),
     operation TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     request_hash TEXT NOT NULL,
@@ -63,7 +64,7 @@ CREATE TABLE idempotency_records (
     status_code INTEGER NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    UNIQUE (band_id, operation, idempotency_key)
+    UNIQUE (scope_id, operation, idempotency_key)
 );
 
 CREATE INDEX audit_logs_band_created_at_idx ON audit_logs (band_id, created_at);

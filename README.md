@@ -39,6 +39,7 @@ REDIS_URL=redis://localhost:6379/0 \
 SUPABASE_JWT_SECRET=replace-me \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
 MERCADOPAGO_WEBHOOK_SECRET=replace-me \
+MERCADOPAGO_POINT_TERMINAL_ID=replace-me \
 pnpm dev:api
 ```
 

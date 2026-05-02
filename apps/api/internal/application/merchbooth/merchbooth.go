@@ -34,8 +34,11 @@ type Repository interface {
 	ListBoothItems(ctx context.Context, query ListBoothItemsQuery) ([]BoothItem, error)
 	CreateCashCheckout(ctx context.Context, command CreateCashCheckoutCommand) (Sale, error)
 	ReservePixCheckout(ctx context.Context, command CreatePixCheckoutCommand) (Sale, bool, error)
+	ReserveCardCheckout(ctx context.Context, command CreateCardCheckoutCommand) (Sale, bool, error)
 	CompletePixCheckoutPayment(ctx context.Context, command CompletePixCheckoutPaymentCommand) (Sale, error)
+	CompleteCardCheckoutPayment(ctx context.Context, command CompleteCardCheckoutPaymentCommand) (Sale, error)
 	FailPixCheckoutPaymentCreation(ctx context.Context, command FailPixCheckoutPaymentCreationCommand) error
+	FailCardCheckoutPaymentCreation(ctx context.Context, command FailCardCheckoutPaymentCreationCommand) error
 	GetPixPaymentProviderOrderID(ctx context.Context, query GetPixPaymentProviderOrderIDQuery) (string, error)
 	ApplyPixPaymentStatus(ctx context.Context, command ApplyPixPaymentStatusCommand) (Sale, error)
 	RecordPaymentEvent(ctx context.Context, command PaymentEventCommand) error
@@ -43,6 +46,7 @@ type Repository interface {
 
 type PaymentProvider interface {
 	CreatePixPayment(ctx context.Context, command CreatePixPaymentCommand) (PixPayment, error)
+	CreateCardPayment(ctx context.Context, command CreateCardPaymentCommand) (PixPayment, error)
 	GetPaymentStatus(ctx context.Context, command GetPaymentStatusCommand) (PixPayment, error)
 }
 
@@ -74,6 +78,16 @@ type CreatePixCheckoutInput struct {
 	Account        AccountContext
 	Items          []CartItemInput
 	PayerEmail     string
+	IdempotencyKey string
+	RequestID      string
+	CreatedAt      time.Time
+}
+
+type CreateCardCheckoutInput struct {
+	Account        AccountContext
+	Items          []CartItemInput
+	CardType       CardPaymentType
+	TerminalID     string
 	IdempotencyKey string
 	RequestID      string
 	CreatedAt      time.Time
@@ -112,6 +126,21 @@ type CreatePixCheckoutCommand struct {
 	ExpiresAt         time.Time
 }
 
+type CreateCardCheckoutCommand struct {
+	Account           AccountContext
+	SaleID            string
+	PaymentID         string
+	ExternalReference string
+	Items             []CartItem
+	CardType          CardPaymentType
+	TerminalID        string
+	Installments      int
+	IdempotencyKey    string
+	RequestID         string
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+}
+
 type VerifyPixPaymentCommand struct {
 	Account        AccountContext
 	PaymentID      string
@@ -131,7 +160,30 @@ type CompletePixCheckoutPaymentCommand struct {
 	UpdatedAt      time.Time
 }
 
+type CompleteCardCheckoutPaymentCommand struct {
+	Account        AccountContext
+	SaleID         string
+	PaymentID      string
+	RequestID      string
+	RequestHash    string
+	ProviderResult PixPayment
+	CardType       CardPaymentType
+	TerminalID     string
+	Installments   int
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
 type FailPixCheckoutPaymentCreationCommand struct {
+	Account        AccountContext
+	SaleID         string
+	PaymentID      string
+	RequestID      string
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
+type FailCardCheckoutPaymentCreationCommand struct {
 	Account        AccountContext
 	SaleID         string
 	PaymentID      string
@@ -175,6 +227,18 @@ type CreatePixPaymentCommand struct {
 	ExternalReference string
 	Amount            inventorydomain.Money
 	PayerEmail        string
+	IdempotencyKey    string
+	ExpiresAt         time.Time
+}
+
+type CreateCardPaymentCommand struct {
+	SaleID            string
+	PaymentID         string
+	ExternalReference string
+	Amount            inventorydomain.Money
+	TerminalID        string
+	CardType          CardPaymentType
+	Installments      int
 	IdempotencyKey    string
 	ExpiresAt         time.Time
 }
@@ -287,6 +351,9 @@ type Payment struct {
 	PixQRCode            string
 	PixQRCodeBase64      string
 	PixTicketURL         string
+	PointTerminalID      string
+	CardPaymentType      CardPaymentType
+	CardInstallments     int
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }
@@ -312,6 +379,14 @@ type PaymentMethod string
 const (
 	PaymentMethodCash PaymentMethod = "cash"
 	PaymentMethodPix  PaymentMethod = "pix"
+	PaymentMethodCard PaymentMethod = "card"
+)
+
+type CardPaymentType string
+
+const (
+	CardPaymentTypeCredit CardPaymentType = "credit_card"
+	CardPaymentTypeDebit  CardPaymentType = "debit_card"
 )
 
 type PaymentStatus string
@@ -518,6 +593,67 @@ func CreatePixCheckout(ctx context.Context, repository Repository, paymentProvid
 	return sale, nil
 }
 
+func CreateCardCheckout(ctx context.Context, repository Repository, paymentProvider PaymentProvider, input CreateCardCheckoutInput) (Sale, error) {
+	command, requestHash, err := validateCreateCardCheckoutInput(input)
+	if err != nil {
+		return Sale{}, err
+	}
+
+	reservedSale, found, err := repository.ReserveCardCheckout(ctx, command)
+	if err != nil {
+		return Sale{}, fmt.Errorf("reserve card checkout band_id=%q: %w", command.Account.BandID, err)
+	}
+	if found {
+		return reservedSale, nil
+	}
+
+	providerResult, err := paymentProvider.CreateCardPayment(ctx, CreateCardPaymentCommand{
+		SaleID:            command.SaleID,
+		PaymentID:         command.PaymentID,
+		ExternalReference: command.ExternalReference,
+		Amount:            reservedSale.Total,
+		TerminalID:        command.TerminalID,
+		CardType:          command.CardType,
+		Installments:      command.Installments,
+		IdempotencyKey:    command.IdempotencyKey,
+		ExpiresAt:         command.ExpiresAt,
+	})
+	if err != nil {
+		releaseErr := repository.FailCardCheckoutPaymentCreation(ctx, FailCardCheckoutPaymentCreationCommand{
+			Account:        command.Account,
+			SaleID:         command.SaleID,
+			PaymentID:      command.PaymentID,
+			RequestID:      command.RequestID,
+			IdempotencyKey: command.IdempotencyKey,
+			UpdatedAt:      command.CreatedAt,
+		})
+		if releaseErr != nil {
+			return Sale{}, fmt.Errorf("create card payment failed and reservation release failed band_id=%q sale_id=%q: provider_error=%w release_error=%v", command.Account.BandID, command.SaleID, err, releaseErr)
+		}
+
+		return Sale{}, fmt.Errorf("%w: create card payment band_id=%q sale_id=%q: %v", ErrPaymentProvider, command.Account.BandID, command.SaleID, err)
+	}
+
+	sale, err := repository.CompleteCardCheckoutPayment(ctx, CompleteCardCheckoutPaymentCommand{
+		Account:        command.Account,
+		SaleID:         command.SaleID,
+		PaymentID:      command.PaymentID,
+		RequestID:      command.RequestID,
+		RequestHash:    requestHash,
+		ProviderResult: providerResult,
+		CardType:       command.CardType,
+		TerminalID:     command.TerminalID,
+		Installments:   command.Installments,
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt,
+	})
+	if err != nil {
+		return Sale{}, fmt.Errorf("complete card checkout payment band_id=%q sale_id=%q: %w", command.Account.BandID, command.SaleID, err)
+	}
+
+	return sale, nil
+}
+
 func validateListBoothItemsInput(input ListBoothItemsInput) (ListBoothItemsQuery, error) {
 	if err := validateReadAccount(input.Account); err != nil {
 		return ListBoothItemsQuery{}, err
@@ -629,6 +765,63 @@ func validateCreatePixCheckoutInput(input CreatePixCheckoutInput) (CreatePixChec
 	return command, requestHash, nil
 }
 
+func validateCreateCardCheckoutInput(input CreateCardCheckoutInput) (CreateCardCheckoutCommand, string, error) {
+	cashLikeInput := CreateCashCheckoutInput{
+		Account:        input.Account,
+		Items:          input.Items,
+		IdempotencyKey: input.IdempotencyKey,
+		RequestID:      input.RequestID,
+		CreatedAt:      input.CreatedAt,
+	}
+	cashCommand, err := validateCreateCashCheckoutInput(cashLikeInput)
+	if err != nil {
+		return CreateCardCheckoutCommand{}, "", err
+	}
+
+	cardType, err := validateCardPaymentType(input.CardType)
+	if err != nil {
+		return CreateCardCheckoutCommand{}, "", err
+	}
+
+	terminalID := strings.TrimSpace(input.TerminalID)
+	if terminalID == "" {
+		return CreateCardCheckoutCommand{}, "", fmt.Errorf("point terminal id is required")
+	}
+
+	saleID := uuid.NewString()
+	paymentID := uuid.NewString()
+	command := CreateCardCheckoutCommand{
+		Account:           cashCommand.Account,
+		SaleID:            saleID,
+		PaymentID:         paymentID,
+		ExternalReference: "sale_" + saleID,
+		Items:             cashCommand.Items,
+		CardType:          cardType,
+		TerminalID:        terminalID,
+		Installments:      1,
+		IdempotencyKey:    cashCommand.IdempotencyKey,
+		RequestID:         cashCommand.RequestID,
+		CreatedAt:         cashCommand.CreatedAt,
+		ExpiresAt:         cashCommand.CreatedAt.Add(16 * time.Minute),
+	}
+
+	requestHash, err := HashCardCheckoutRequest(command)
+	if err != nil {
+		return CreateCardCheckoutCommand{}, "", err
+	}
+
+	return command, requestHash, nil
+}
+
+func validateCardPaymentType(value CardPaymentType) (CardPaymentType, error) {
+	switch value {
+	case CardPaymentTypeCredit, CardPaymentTypeDebit:
+		return value, nil
+	default:
+		return "", fmt.Errorf("card payment type must be credit_card or debit_card")
+	}
+}
+
 func validateVerifyPixPaymentInput(input VerifyPixPaymentInput) (VerifyPixPaymentCommand, error) {
 	if err := validateWriteAccount(input.Account); err != nil {
 		return VerifyPixPaymentCommand{}, err
@@ -676,6 +869,30 @@ func HashPixCheckoutRequest(command CreatePixCheckoutCommand) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal pix checkout request hash body: %w", err)
+	}
+
+	hash := sha256.Sum256(body)
+	return hex.EncodeToString(hash[:]), nil
+}
+
+func HashCardCheckoutRequest(command CreateCardCheckoutCommand) (string, error) {
+	body, err := json.Marshal(struct {
+		BandID       string          `json:"bandId"`
+		Items        []CartItem      `json:"items"`
+		Method       PaymentMethod   `json:"method"`
+		CardType     CardPaymentType `json:"cardType"`
+		TerminalID   string          `json:"terminalId"`
+		Installments int             `json:"installments"`
+	}{
+		BandID:       command.Account.BandID,
+		Items:        command.Items,
+		Method:       PaymentMethodCard,
+		CardType:     command.CardType,
+		TerminalID:   command.TerminalID,
+		Installments: command.Installments,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal card checkout request hash body: %w", err)
 	}
 
 	hash := sha256.Sum256(body)

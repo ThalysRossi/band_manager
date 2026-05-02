@@ -11,6 +11,7 @@ func TestLoadFromEnvironmentRejectsWildcardOrigins(t *testing.T) {
 	t.Setenv("SUPABASE_JWT_SECRET", "secret")
 	t.Setenv("MERCADOPAGO_ACCESS_TOKEN", "token")
 	t.Setenv("MERCADOPAGO_WEBHOOK_SECRET", "secret")
+	t.Setenv("MERCADOPAGO_POINT_TERMINAL_ID", "terminal")
 
 	_, err := LoadFromEnvironment()
 	if err == nil {

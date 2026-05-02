@@ -8,14 +8,15 @@ import (
 )
 
 type Config struct {
-	Environment              string
-	Address                  string
-	AllowedOrigins           []string
-	DatabaseURL              string
-	RedisURL                 string
-	SupabaseJWTSecret        string
-	MercadoPagoAccessToken   string
-	MercadoPagoWebhookSecret string
+	Environment                string
+	Address                    string
+	AllowedOrigins             []string
+	DatabaseURL                string
+	RedisURL                   string
+	SupabaseJWTSecret          string
+	MercadoPagoAccessToken     string
+	MercadoPagoWebhookSecret   string
+	MercadoPagoPointTerminalID string
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -59,20 +60,26 @@ func LoadFromEnvironment() (Config, error) {
 		return Config{}, err
 	}
 
+	mercadoPagoPointTerminalID, err := requiredEnv("MERCADOPAGO_POINT_TERMINAL_ID")
+	if err != nil {
+		return Config{}, err
+	}
+
 	allowedOrigins, err := parseAllowedOrigins(originsValue)
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		Environment:              environment,
-		Address:                  address,
-		AllowedOrigins:           allowedOrigins,
-		DatabaseURL:              databaseURL,
-		RedisURL:                 redisURL,
-		SupabaseJWTSecret:        supabaseJWTSecret,
-		MercadoPagoAccessToken:   mercadoPagoAccessToken,
-		MercadoPagoWebhookSecret: mercadoPagoWebhookSecret,
+		Environment:                environment,
+		Address:                    address,
+		AllowedOrigins:             allowedOrigins,
+		DatabaseURL:                databaseURL,
+		RedisURL:                   redisURL,
+		SupabaseJWTSecret:          supabaseJWTSecret,
+		MercadoPagoAccessToken:     mercadoPagoAccessToken,
+		MercadoPagoWebhookSecret:   mercadoPagoWebhookSecret,
+		MercadoPagoPointTerminalID: mercadoPagoPointTerminalID,
 	}, nil
 }
 

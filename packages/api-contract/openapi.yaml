@@ -447,10 +447,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /merch-booth/checkouts/card:
+    post:
+      operationId: createCardCheckout
+      summary: Reserve inventory and create a MercadoPago Point card payment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardCheckoutRequest'
+      responses:
+        '201':
+          description: Card checkout created and awaiting terminal payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '400':
+          description: Invalid checkout request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot checkout in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Booth item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Insufficient stock or idempotency conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Payment provider request failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /merch-booth/payments/{paymentId}/verify:
     post:
-      operationId: verifyPixPayment
-      summary: Re-check a Pix payment with MercadoPago and apply the verified status
+      operationId: verifyMercadoPagoPayment
+      summary: Re-check a MercadoPago payment and apply the verified status
       security:
         - bearerAuth: []
       parameters:
@@ -895,6 +952,22 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/CashCheckoutItem'
+    CardCheckoutRequest:
+      type: object
+      required:
+        - items
+        - cardType
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CashCheckoutItem'
+        cardType:
+          type: string
+          enum:
+            - credit_card
+            - debit_card
     PaymentVerificationResponse:
       type: object
       required:
@@ -1043,6 +1116,7 @@ components:
           enum:
             - cash
             - pix
+            - card
         status:
           type: string
           enum:
@@ -1078,6 +1152,16 @@ components:
           type: string
         pixTicketUrl:
           type: string
+        pointTerminalId:
+          type: string
+        cardPaymentType:
+          type: string
+          enum:
+            - credit_card
+            - debit_card
+        cardInstallments:
+          type: integer
+          minimum: 1
         createdAt:
           type: string
           format: date-time

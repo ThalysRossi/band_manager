@@ -166,6 +166,59 @@ func TestCreatePixCheckoutReleasesReservationWhenProviderFails(t *testing.T) {
 	}
 }
 
+func TestCreateCardCheckoutCallsPaymentProvider(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeRepository{
+		sale: Sale{
+			ID:    "sale_1",
+			Total: inventoryMoney(10000),
+		},
+	}
+	provider := fakePaymentProvider{
+		payment: PixPayment{
+			Provider:            "mercadopago",
+			ProviderOrderID:     "order_1",
+			ProviderPaymentID:   "payment_1",
+			ExternalReference:   "sale_1",
+			LocalStatus:         PaymentStatusProcessing,
+			Amount:              inventoryMoney(10000),
+			ExpiresAt:           time.Date(2026, 5, 1, 12, 16, 0, 0, time.UTC),
+			RawProviderResponse: []byte(`{"id":"order_1"}`),
+		},
+	}
+	input := CreateCardCheckoutInput{
+		Account:        validCreateCashCheckoutInput().Account,
+		Items:          validCreateCashCheckoutInput().Items,
+		CardType:       CardPaymentTypeCredit,
+		TerminalID:     "terminal_1",
+		IdempotencyKey: "idem_1",
+		RequestID:      "request_1",
+		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	_, err := CreateCardCheckout(context.Background(), &repository, &provider, input)
+	if err != nil {
+		t.Fatalf("create card checkout: %v", err)
+	}
+
+	if provider.cardCommand.TerminalID != "terminal_1" {
+		t.Fatalf("expected terminal id, got %q", provider.cardCommand.TerminalID)
+	}
+
+	if provider.cardCommand.CardType != CardPaymentTypeCredit {
+		t.Fatalf("expected credit card type, got %q", provider.cardCommand.CardType)
+	}
+
+	if provider.cardCommand.Installments != 1 {
+		t.Fatalf("expected one installment, got %d", provider.cardCommand.Installments)
+	}
+
+	if repository.completeCardCommand.ProviderResult.ProviderOrderID != "order_1" {
+		t.Fatalf("expected provider order id, got %q", repository.completeCardCommand.ProviderResult.ProviderOrderID)
+	}
+}
+
 func TestVerifyMercadoPagoOrderWebhookSignatureAcceptsValidSignature(t *testing.T) {
 	t.Parallel()
 
@@ -235,13 +288,16 @@ func validCreateCashCheckoutInput() CreateCashCheckoutInput {
 }
 
 type fakeRepository struct {
-	command         CreateCashCheckoutCommand
-	pixCommand      CreatePixCheckoutCommand
-	completeCommand CompletePixCheckoutPaymentCommand
-	failCommand     FailPixCheckoutPaymentCreationCommand
-	sale            Sale
-	found           bool
-	err             error
+	command             CreateCashCheckoutCommand
+	pixCommand          CreatePixCheckoutCommand
+	cardCommand         CreateCardCheckoutCommand
+	completeCommand     CompletePixCheckoutPaymentCommand
+	completeCardCommand CompleteCardCheckoutPaymentCommand
+	failCommand         FailPixCheckoutPaymentCreationCommand
+	failCardCommand     FailCardCheckoutPaymentCreationCommand
+	sale                Sale
+	found               bool
+	err                 error
 }
 
 func (repository *fakeRepository) ListBoothItems(ctx context.Context, query ListBoothItemsQuery) ([]BoothItem, error) {
@@ -270,6 +326,15 @@ func (repository *fakeRepository) ReservePixCheckout(ctx context.Context, comman
 	return repository.sale, repository.found, repository.err
 }
 
+func (repository *fakeRepository) ReserveCardCheckout(ctx context.Context, command CreateCardCheckoutCommand) (Sale, bool, error) {
+	if ctx == nil {
+		return Sale{}, false, errors.New("context is required")
+	}
+
+	repository.cardCommand = command
+	return repository.sale, repository.found, repository.err
+}
+
 func (repository *fakeRepository) CompletePixCheckoutPayment(ctx context.Context, command CompletePixCheckoutPaymentCommand) (Sale, error) {
 	if ctx == nil {
 		return Sale{}, errors.New("context is required")
@@ -279,12 +344,30 @@ func (repository *fakeRepository) CompletePixCheckoutPayment(ctx context.Context
 	return repository.sale, repository.err
 }
 
+func (repository *fakeRepository) CompleteCardCheckoutPayment(ctx context.Context, command CompleteCardCheckoutPaymentCommand) (Sale, error) {
+	if ctx == nil {
+		return Sale{}, errors.New("context is required")
+	}
+
+	repository.completeCardCommand = command
+	return repository.sale, repository.err
+}
+
 func (repository *fakeRepository) FailPixCheckoutPaymentCreation(ctx context.Context, command FailPixCheckoutPaymentCreationCommand) error {
 	if ctx == nil {
 		return errors.New("context is required")
 	}
 
 	repository.failCommand = command
+	return repository.err
+}
+
+func (repository *fakeRepository) FailCardCheckoutPaymentCreation(ctx context.Context, command FailCardCheckoutPaymentCreationCommand) error {
+	if ctx == nil {
+		return errors.New("context is required")
+	}
+
+	repository.failCardCommand = command
 	return repository.err
 }
 
@@ -314,6 +397,7 @@ func (repository *fakeRepository) RecordPaymentEvent(ctx context.Context, comman
 
 type fakePaymentProvider struct {
 	command       CreatePixPaymentCommand
+	cardCommand   CreateCardPaymentCommand
 	statusCommand GetPaymentStatusCommand
 	payment       PixPayment
 	err           error
@@ -325,6 +409,19 @@ func (provider *fakePaymentProvider) CreatePixPayment(ctx context.Context, comma
 	}
 
 	provider.command = command
+	if provider.err != nil {
+		return PixPayment{}, provider.err
+	}
+
+	return provider.payment, nil
+}
+
+func (provider *fakePaymentProvider) CreateCardPayment(ctx context.Context, command CreateCardPaymentCommand) (PixPayment, error) {
+	if ctx == nil {
+		return PixPayment{}, errors.New("context is required")
+	}
+
+	provider.cardCommand = command
 	if provider.err != nil {
 		return PixPayment{}, provider.err
 	}

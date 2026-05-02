@@ -212,6 +212,83 @@ func TestRepositoryReserveAndCompletePixCheckout(t *testing.T) {
 	}
 }
 
+func TestRepositoryReserveAndCompleteCardCheckout(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Card", 4)
+	repository := NewRepository(pool)
+	command := validCardCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+
+	reservedSale, found, err := repository.ReserveCardCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("reserve card checkout: %v", err)
+	}
+	if found {
+		t.Fatal("expected new card checkout reservation")
+	}
+	if reservedSale.Payment.PointTerminalID != "terminal_1" {
+		t.Fatalf("expected terminal id, got %q", reservedSale.Payment.PointTerminalID)
+	}
+
+	assertTableCount(t, pool, "inventory_reservations", "band_id = $1 AND sale_id = $2 AND variant_id = $3 AND status = $4", []interface{}{account.BandID, command.SaleID, inventoryProduct.Variants[0].ID, "reserved"}, 1)
+	assertTableCount(t, pool, "payments", "sale_id = $1 AND method = $2 AND point_terminal_id = $3 AND card_payment_type = $4 AND card_installments = $5", []interface{}{command.SaleID, "card", "terminal_1", "credit_card", 1}, 1)
+
+	requestHash, err := applicationmerchbooth.HashCardCheckoutRequest(command)
+	if err != nil {
+		t.Fatalf("hash card checkout request: %v", err)
+	}
+
+	completedSale, err := repository.CompleteCardCheckoutPayment(ctx, applicationmerchbooth.CompleteCardCheckoutPaymentCommand{
+		Account:     account,
+		SaleID:      command.SaleID,
+		PaymentID:   command.PaymentID,
+		RequestID:   command.RequestID,
+		RequestHash: requestHash,
+		ProviderResult: applicationmerchbooth.PixPayment{
+			Provider:             "mercadopago",
+			ProviderOrderID:      "order_card_1",
+			ProviderPaymentID:    "payment_card_1",
+			ProviderReferenceID:  "reference_card_1",
+			ExternalReference:    command.ExternalReference,
+			ProviderStatus:       "created",
+			ProviderStatusDetail: "created",
+			LocalStatus:          applicationmerchbooth.PaymentStatusProviderPending,
+			Amount:               reservedSale.Total,
+			ExpiresAt:            command.ExpiresAt,
+			RawProviderResponse:  []byte(`{"id":"order_card_1"}`),
+		},
+		CardType:       command.CardType,
+		TerminalID:     command.TerminalID,
+		Installments:   command.Installments,
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("complete card checkout payment: %v", err)
+	}
+
+	if completedSale.Payment.ProviderOrderID != "order_card_1" {
+		t.Fatalf("expected provider order id, got %q", completedSale.Payment.ProviderOrderID)
+	}
+	if completedSale.Payment.CardPaymentType != applicationmerchbooth.CardPaymentTypeCredit {
+		t.Fatalf("expected credit card type, got %q", completedSale.Payment.CardPaymentType)
+	}
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_id = $3", []interface{}{account.BandID, "merch_booth.card_checkout_payment_created", command.PaymentID}, 1)
+
+	idempotentSale, found, err := repository.ReserveCardCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("load idempotent card checkout: %v", err)
+	}
+	if !found {
+		t.Fatal("expected idempotent card checkout")
+	}
+	if idempotentSale.ID != completedSale.ID {
+		t.Fatalf("expected idempotent sale id %q, got %q", completedSale.ID, idempotentSale.ID)
+	}
+}
+
 func TestRepositoryFailPixCheckoutPaymentCreationReleasesReservation(t *testing.T) {
 	t.Parallel()
 
@@ -604,6 +681,29 @@ func validPixCheckoutCommand(account applicationmerchbooth.AccountContext, varia
 		RequestID:      "request_pix_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		CreatedAt:      testTimestamp().Add(3 * time.Minute),
 		ExpiresAt:      testTimestamp().Add(33 * time.Minute),
+	}
+}
+
+func validCardCheckoutCommand(account applicationmerchbooth.AccountContext, variantID string, quantity int) applicationmerchbooth.CreateCardCheckoutCommand {
+	saleID := uuid.NewString()
+	return applicationmerchbooth.CreateCardCheckoutCommand{
+		Account:           account,
+		SaleID:            saleID,
+		PaymentID:         uuid.NewString(),
+		ExternalReference: "sale_" + saleID,
+		Items: []applicationmerchbooth.CartItem{
+			{
+				VariantID: variantID,
+				Quantity:  quantity,
+			},
+		},
+		CardType:       applicationmerchbooth.CardPaymentTypeCredit,
+		TerminalID:     "terminal_1",
+		Installments:   1,
+		IdempotencyKey: "idem_card_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
+		RequestID:      "request_card_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
+		CreatedAt:      testTimestamp().Add(4 * time.Minute),
+		ExpiresAt:      testTimestamp().Add(20 * time.Minute),
 	}
 }
 

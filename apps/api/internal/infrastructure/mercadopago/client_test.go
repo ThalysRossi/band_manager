@@ -47,6 +47,9 @@ func TestCreatePixPaymentSendsOrderRequestAndParsesQRCode(t *testing.T) {
 		if body.ExternalReference != "sale_1" {
 			t.Fatalf("expected external reference, got %q", body.ExternalReference)
 		}
+		if body.Transactions.Payments[0].PaymentMethod == nil {
+			t.Fatal("expected pix payment method")
+		}
 		if body.Transactions.Payments[0].PaymentMethod.ID != "pix" {
 			t.Fatalf("expected pix payment method, got %q", body.Transactions.Payments[0].PaymentMethod.ID)
 		}
@@ -111,6 +114,98 @@ func TestCreatePixPaymentSendsOrderRequestAndParsesQRCode(t *testing.T) {
 	}
 	if payment.LocalStatus != applicationmerchbooth.PaymentStatusActionRequired {
 		t.Fatalf("expected action required status, got %q", payment.LocalStatus)
+	}
+}
+
+func TestCreateCardPaymentSendsPointOrderRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			t.Fatalf("expected POST method, got %s", request.Method)
+		}
+		if request.URL.Path != "/v1/orders" {
+			t.Fatalf("expected /v1/orders path, got %s", request.URL.Path)
+		}
+		if request.Header.Get("X-Idempotency-Key") != "idem_1" {
+			t.Fatalf("expected idempotency key header, got %q", request.Header.Get("X-Idempotency-Key"))
+		}
+
+		var body orderRequest
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		if body.Type != "point" {
+			t.Fatalf("expected point order type, got %q", body.Type)
+		}
+		if body.TotalAmount != "42.00" {
+			t.Fatalf("expected decimal amount, got %q", body.TotalAmount)
+		}
+		if body.ExpirationTime != "PT16M" {
+			t.Fatalf("expected 16 minute expiration, got %q", body.ExpirationTime)
+		}
+		if body.Config == nil {
+			t.Fatal("expected point config")
+		}
+		if body.Config.Point.TerminalID != "terminal_1" {
+			t.Fatalf("expected terminal id, got %q", body.Config.Point.TerminalID)
+		}
+		if body.Config.PaymentMethod.DefaultType != "credit_card" {
+			t.Fatalf("expected credit card type, got %q", body.Config.PaymentMethod.DefaultType)
+		}
+		if body.Config.PaymentMethod.DefaultInstallments != 1 {
+			t.Fatalf("expected one installment, got %d", body.Config.PaymentMethod.DefaultInstallments)
+		}
+
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusCreated)
+		response.Write([]byte(`{
+			"id": "order_1",
+			"external_reference": "sale_1",
+			"status": "at_terminal",
+			"transactions": {
+				"payments": [
+					{
+						"id": "payment_1",
+						"reference_id": "reference_1",
+						"status": "at_terminal",
+						"status_detail": "waiting_card"
+					}
+				]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("access-token", server.URL, server.Client(), slog.Default())
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	payment, err := client.CreateCardPayment(context.Background(), applicationmerchbooth.CreateCardPaymentCommand{
+		SaleID:            "sale_1",
+		PaymentID:         "payment_local_1",
+		ExternalReference: "sale_1",
+		Amount:            inventorydomain.Money{Amount: 4200, Currency: "BRL"},
+		TerminalID:        "terminal_1",
+		CardType:          applicationmerchbooth.CardPaymentTypeCredit,
+		Installments:      1,
+		IdempotencyKey:    "idem_1",
+		ExpiresAt:         time.Date(2026, 5, 1, 12, 16, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("create card payment: %v", err)
+	}
+
+	if payment.ProviderOrderID != "order_1" {
+		t.Fatalf("expected provider order id, got %q", payment.ProviderOrderID)
+	}
+	if payment.LocalStatus != applicationmerchbooth.PaymentStatusProcessing {
+		t.Fatalf("expected processing status, got %q", payment.LocalStatus)
+	}
+	if payment.ExpiresAt != time.Date(2026, 5, 1, 12, 16, 0, 0, time.UTC) {
+		t.Fatalf("expected expiration time, got %s", payment.ExpiresAt)
 	}
 }
 

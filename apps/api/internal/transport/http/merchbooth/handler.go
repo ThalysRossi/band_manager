@@ -18,13 +18,14 @@ import (
 )
 
 type Handler struct {
-	authenticator            session.Authenticator
-	accountRepository        accounts.BandAccountRepository
-	merchRepository          applicationmerchbooth.Repository
-	paymentProvider          applicationmerchbooth.PaymentProvider
-	mercadoPagoWebhookSecret string
-	logger                   *slog.Logger
-	now                      func() time.Time
+	authenticator              session.Authenticator
+	accountRepository          accounts.BandAccountRepository
+	merchRepository            applicationmerchbooth.Repository
+	paymentProvider            applicationmerchbooth.PaymentProvider
+	mercadoPagoWebhookSecret   string
+	mercadoPagoPointTerminalID string
+	logger                     *slog.Logger
+	now                        func() time.Time
 }
 
 type BoothItemsResponse struct {
@@ -51,6 +52,11 @@ type CashCheckoutRequest struct {
 
 type PixCheckoutRequest struct {
 	Items []CartItemRequest `json:"items"`
+}
+
+type CardCheckoutRequest struct {
+	Items    []CartItemRequest `json:"items"`
+	CardType string            `json:"cardType"`
 }
 
 type PaymentVerificationResponse struct {
@@ -113,6 +119,9 @@ type PaymentResponse struct {
 	PixQRCode            string        `json:"pixQrCode,omitempty"`
 	PixQRCodeBase64      string        `json:"pixQrCodeBase64,omitempty"`
 	PixTicketURL         string        `json:"pixTicketUrl,omitempty"`
+	PointTerminalID      string        `json:"pointTerminalId,omitempty"`
+	CardPaymentType      string        `json:"cardPaymentType,omitempty"`
+	CardInstallments     int           `json:"cardInstallments,omitempty"`
 	CreatedAt            time.Time     `json:"createdAt"`
 	UpdatedAt            time.Time     `json:"updatedAt"`
 }
@@ -136,15 +145,16 @@ type PhotoResponse struct {
 	SizeBytes   int    `json:"sizeBytes"`
 }
 
-func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, mercadoPagoWebhookSecret string, logger *slog.Logger) Handler {
+func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, mercadoPagoWebhookSecret string, mercadoPagoPointTerminalID string, logger *slog.Logger) Handler {
 	return Handler{
-		authenticator:            authenticator,
-		accountRepository:        accountRepository,
-		merchRepository:          merchRepository,
-		paymentProvider:          paymentProvider,
-		mercadoPagoWebhookSecret: strings.TrimSpace(mercadoPagoWebhookSecret),
-		logger:                   logger,
-		now:                      time.Now,
+		authenticator:              authenticator,
+		accountRepository:          accountRepository,
+		merchRepository:            merchRepository,
+		paymentProvider:            paymentProvider,
+		mercadoPagoWebhookSecret:   strings.TrimSpace(mercadoPagoWebhookSecret),
+		mercadoPagoPointTerminalID: strings.TrimSpace(mercadoPagoPointTerminalID),
+		logger:                     logger,
+		now:                        time.Now,
 	}
 }
 
@@ -232,6 +242,44 @@ func (handler Handler) CreatePixCheckout(response http.ResponseWriter, request *
 	})
 	if err != nil {
 		handler.writeMerchBoothError(response, "pix checkout failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusCreated, toSaleResponse(sale))
+}
+
+func (handler Handler) CreateCardCheckout(response http.ResponseWriter, request *http.Request) {
+	accountContext, ok := handler.accountContext(response, request)
+	if !ok {
+		return
+	}
+
+	idempotencyKey, requestID, ok := handler.mutationHeaders(response, request)
+	if !ok {
+		return
+	}
+
+	var body CardCheckoutRequest
+	if !handler.decodeJSON(response, request, &body) {
+		return
+	}
+
+	items, ok := toCartItemInputs(response, body.Items)
+	if !ok {
+		return
+	}
+
+	sale, err := applicationmerchbooth.CreateCardCheckout(request.Context(), handler.merchRepository, handler.paymentProvider, applicationmerchbooth.CreateCardCheckoutInput{
+		Account:        accountContext,
+		Items:          items,
+		CardType:       applicationmerchbooth.CardPaymentType(body.CardType),
+		TerminalID:     handler.mercadoPagoPointTerminalID,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		CreatedAt:      handler.now().UTC(),
+	})
+	if err != nil {
+		handler.writeMerchBoothError(response, "card checkout failed", err)
 		return
 	}
 
@@ -506,6 +554,9 @@ func toPaymentResponse(payment applicationmerchbooth.Payment) PaymentResponse {
 		PixQRCode:            payment.PixQRCode,
 		PixQRCodeBase64:      payment.PixQRCodeBase64,
 		PixTicketURL:         payment.PixTicketURL,
+		PointTerminalID:      payment.PointTerminalID,
+		CardPaymentType:      string(payment.CardPaymentType),
+		CardInstallments:     payment.CardInstallments,
 		CreatedAt:            payment.CreatedAt,
 		UpdatedAt:            payment.UpdatedAt,
 	}

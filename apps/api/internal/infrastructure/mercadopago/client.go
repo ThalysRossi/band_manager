@@ -29,9 +29,11 @@ type orderRequest struct {
 	Type              string            `json:"type"`
 	TotalAmount       string            `json:"total_amount"`
 	ExternalReference string            `json:"external_reference"`
+	ExpirationTime    string            `json:"expiration_time,omitempty"`
 	ProcessingMode    string            `json:"processing_mode"`
+	Config            *orderConfig      `json:"config,omitempty"`
 	Transactions      orderTransactions `json:"transactions"`
-	Payer             orderPayer        `json:"payer"`
+	Payer             *orderPayer       `json:"payer,omitempty"`
 }
 
 type orderTransactions struct {
@@ -39,9 +41,9 @@ type orderTransactions struct {
 }
 
 type orderPaymentRequest struct {
-	Amount         string             `json:"amount"`
-	PaymentMethod  orderPaymentMethod `json:"payment_method"`
-	ExpirationTime string             `json:"expiration_time"`
+	Amount         string              `json:"amount"`
+	PaymentMethod  *orderPaymentMethod `json:"payment_method,omitempty"`
+	ExpirationTime string              `json:"expiration_time,omitempty"`
 }
 
 type orderPaymentMethod struct {
@@ -51,6 +53,22 @@ type orderPaymentMethod struct {
 
 type orderPayer struct {
 	Email string `json:"email"`
+}
+
+type orderConfig struct {
+	Point         orderPointConfig         `json:"point"`
+	PaymentMethod orderPaymentMethodConfig `json:"payment_method"`
+}
+
+type orderPointConfig struct {
+	TerminalID      string `json:"terminal_id"`
+	PrintOnTerminal string `json:"print_on_terminal"`
+}
+
+type orderPaymentMethodConfig struct {
+	DefaultType         string `json:"default_type"`
+	DefaultInstallments int    `json:"default_installments"`
+	InstallmentsCost    string `json:"installments_cost"`
 }
 
 type orderResponse struct {
@@ -110,7 +128,7 @@ func (client Client) CreatePixPayment(ctx context.Context, command applicationme
 			Payments: []orderPaymentRequest{
 				{
 					Amount: minorUnitsToDecimal(command.Amount),
-					PaymentMethod: orderPaymentMethod{
+					PaymentMethod: &orderPaymentMethod{
 						ID:   "pix",
 						Type: "bank_transfer",
 					},
@@ -118,7 +136,7 @@ func (client Client) CreatePixPayment(ctx context.Context, command applicationme
 				},
 			},
 		},
-		Payer: orderPayer{Email: command.PayerEmail},
+		Payer: &orderPayer{Email: command.PayerEmail},
 	}
 
 	body, err := json.Marshal(requestBody)
@@ -174,6 +192,50 @@ func (client Client) CreatePixPayment(ctx context.Context, command applicationme
 		TicketURL:            ticketURL,
 		RawProviderResponse:  responseBody,
 	}, nil
+}
+
+func (client Client) CreateCardPayment(ctx context.Context, command applicationmerchbooth.CreateCardPaymentCommand) (applicationmerchbooth.PixPayment, error) {
+	requestBody := orderRequest{
+		Type:              "point",
+		TotalAmount:       minorUnitsToDecimal(command.Amount),
+		ExternalReference: command.ExternalReference,
+		ExpirationTime:    "PT16M",
+		ProcessingMode:    "automatic",
+		Config: &orderConfig{
+			Point: orderPointConfig{
+				TerminalID:      command.TerminalID,
+				PrintOnTerminal: "no_ticket",
+			},
+			PaymentMethod: orderPaymentMethodConfig{
+				DefaultType:         string(command.CardType),
+				DefaultInstallments: command.Installments,
+				InstallmentsCost:    "seller",
+			},
+		},
+		Transactions: orderTransactions{
+			Payments: []orderPaymentRequest{
+				{Amount: minorUnitsToDecimal(command.Amount)},
+			},
+		},
+	}
+
+	body, err := json.Marshal(requestBody)
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, fmt.Errorf("marshal mercadopago card order request external_reference=%q terminal_id=%q: %w", command.ExternalReference, command.TerminalID, err)
+	}
+
+	responseBody, err := client.doOrderRequest(ctx, body, command.IdempotencyKey, command.ExternalReference)
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, err
+	}
+
+	payment, err := pixPaymentFromOrderResponse(responseBody, command.ExternalReference, command.Amount)
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, err
+	}
+	payment.ExpiresAt = command.ExpiresAt
+
+	return payment, nil
 }
 
 func (client Client) GetPaymentStatus(ctx context.Context, command applicationmerchbooth.GetPaymentStatusCommand) (applicationmerchbooth.PixPayment, error) {

@@ -12,6 +12,7 @@ import (
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
+	accounthandler "github.com/thalys/band-manager/apps/api/internal/transport/http/account"
 	"github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
 	calendarhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/calendar"
 	financialreportshandler "github.com/thalys/band-manager/apps/api/internal/transport/http/financialreports"
@@ -41,6 +42,13 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 	authHandler := authhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, appLogger)
 	router.Post("/auth/signup", authHandler.SignupOwner)
 	router.Get("/me", authHandler.GetCurrentAccount)
+
+	accountHandler := accounthandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, appLogger)
+	router.Get("/account/members", accountHandler.ListMembers)
+	router.Get("/account/invites", accountHandler.ListInvites)
+	router.Post("/account/invites", accountHandler.CreateInvite)
+	router.Post("/account/invites/accept", accountHandler.AcceptInvite)
+	router.Post("/account/invites/{inviteID}/revoke", accountHandler.RevokeInvite)
 
 	inventoryHandler := inventoryhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.InventoryRepository, appLogger)
 	router.Get("/inventory", inventoryHandler.ListInventory)

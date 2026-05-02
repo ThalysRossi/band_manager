@@ -116,10 +116,113 @@ func TestGetCurrentAccountValidatesQuery(t *testing.T) {
 	}
 }
 
+func TestCreateBandInviteRequiresOwner(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{}
+	input := validCreateBandInviteInput()
+	input.Account.Role = permissions.RoleViewer
+
+	_, err := CreateBandInvite(context.Background(), &repository, fixedInviteTokenGenerator("token_1"), input)
+	if err == nil {
+		t.Fatal("expected owner permission error")
+	}
+}
+
+func TestCreateBandInviteValidatesEmail(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{}
+	input := validCreateBandInviteInput()
+	input.Email = "viewer.example.com"
+
+	_, err := CreateBandInvite(context.Background(), &repository, fixedInviteTokenGenerator("token_1"), input)
+	if err == nil {
+		t.Fatal("expected email validation error")
+	}
+}
+
+func TestCreateBandInviteStoresViewerCommand(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{
+		invite: BandInvite{
+			ID:        "invite_1",
+			BandID:    "band_1",
+			Email:     "viewer@example.com",
+			Role:      permissions.RoleViewer,
+			Status:    InviteStatusPending,
+			ExpiresAt: time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC),
+			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		},
+	}
+
+	invite, err := CreateBandInvite(context.Background(), &repository, fixedInviteTokenGenerator("token_1"), validCreateBandInviteInput())
+	if err != nil {
+		t.Fatalf("create band invite: %v", err)
+	}
+
+	if repository.createInviteCommand.Role != permissions.RoleViewer {
+		t.Fatalf("expected viewer role, got %q", repository.createInviteCommand.Role)
+	}
+	if repository.createInviteCommand.ExpiresAt.Format(time.RFC3339) != "2026-05-08T12:00:00Z" {
+		t.Fatalf("expected seven-day expiration, got %s", repository.createInviteCommand.ExpiresAt.Format(time.RFC3339))
+	}
+	if invite.Token != "token_1" {
+		t.Fatalf("expected response token, got %q", invite.Token)
+	}
+}
+
+func TestRevokeBandInviteRequiresOwner(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{}
+	input := RevokeBandInviteInput{
+		Account:        viewerOwnerAccount(),
+		InviteID:       "invite_1",
+		IdempotencyKey: "idem_1",
+		RequestID:      "request_1",
+		RevokedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	_, err := RevokeBandInvite(context.Background(), &repository, input)
+	if err == nil {
+		t.Fatal("expected owner permission error")
+	}
+}
+
+func TestAcceptBandInviteValidatesAuthenticatedEmail(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{}
+	input := validAcceptBandInviteInput()
+	input.Email = "viewer.example.com"
+
+	_, err := AcceptBandInvite(context.Background(), &repository, input)
+	if err == nil {
+		t.Fatal("expected email validation error")
+	}
+}
+
+func TestAcceptBandInvitePropagatesInviteErrors(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeBandAccountRepository{err: ErrInviteExpired}
+
+	_, err := AcceptBandInvite(context.Background(), &repository, validAcceptBandInviteInput())
+	if !errors.Is(err, ErrInviteExpired) {
+		t.Fatalf("expected expired invite error, got %v", err)
+	}
+}
+
 type fakeBandAccountRepository struct {
-	account OwnerAccount
-	command CreateOwnerAccountCommand
-	err     error
+	account             OwnerAccount
+	invite              BandInvite
+	member              BandMember
+	command             CreateOwnerAccountCommand
+	createInviteCommand CreateBandInviteCommand
+	err                 error
 }
 
 func (repository *fakeBandAccountRepository) CreateOwnerAccount(ctx context.Context, command CreateOwnerAccountCommand) (OwnerAccount, error) {
@@ -145,4 +248,105 @@ func (repository *fakeBandAccountRepository) GetCurrentAccount(ctx context.Conte
 	}
 
 	return repository.account, nil
+}
+
+func (repository *fakeBandAccountRepository) ListBandMembers(ctx context.Context, query ListBandMembersQuery) ([]BandMember, error) {
+	if ctx == nil {
+		return nil, errors.New("context is required")
+	}
+	if repository.err != nil {
+		return nil, repository.err
+	}
+
+	return []BandMember{repository.member}, nil
+}
+
+func (repository *fakeBandAccountRepository) ListBandInvites(ctx context.Context, query ListBandInvitesQuery) ([]BandInvite, error) {
+	if ctx == nil {
+		return nil, errors.New("context is required")
+	}
+	if repository.err != nil {
+		return nil, repository.err
+	}
+
+	return []BandInvite{repository.invite}, nil
+}
+
+func (repository *fakeBandAccountRepository) CreateBandInvite(ctx context.Context, command CreateBandInviteCommand) (BandInvite, error) {
+	if ctx == nil {
+		return BandInvite{}, errors.New("context is required")
+	}
+	repository.createInviteCommand = command
+	if repository.err != nil {
+		return BandInvite{}, repository.err
+	}
+
+	return repository.invite, nil
+}
+
+func (repository *fakeBandAccountRepository) RevokeBandInvite(ctx context.Context, command RevokeBandInviteCommand) (BandInvite, error) {
+	if ctx == nil {
+		return BandInvite{}, errors.New("context is required")
+	}
+	if repository.err != nil {
+		return BandInvite{}, repository.err
+	}
+
+	return repository.invite, nil
+}
+
+func (repository *fakeBandAccountRepository) AcceptBandInvite(ctx context.Context, command AcceptBandInviteCommand) (BandMember, error) {
+	if ctx == nil {
+		return BandMember{}, errors.New("context is required")
+	}
+	if repository.err != nil {
+		return BandMember{}, repository.err
+	}
+
+	return repository.member, nil
+}
+
+func fixedInviteTokenGenerator(token string) InviteTokenGenerator {
+	return func() (string, error) {
+		return token, nil
+	}
+}
+
+func validCreateBandInviteInput() CreateBandInviteInput {
+	return CreateBandInviteInput{
+		Account:        ownerAccount(),
+		Email:          " VIEWER@example.com ",
+		IdempotencyKey: " idem_1 ",
+		RequestID:      " request_1 ",
+		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+}
+
+func validAcceptBandInviteInput() AcceptBandInviteInput {
+	return AcceptBandInviteInput{
+		AuthProvider:       "supabase",
+		AuthProviderUserID: "auth_viewer_1",
+		Email:              "viewer@example.com",
+		Token:              "token_1",
+		IdempotencyKey:     "idem_1",
+		RequestID:          "request_1",
+		AcceptedAt:         time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+}
+
+func ownerAccount() OwnerAccount {
+	return OwnerAccount{
+		UserID:       "user_1",
+		BandID:       "band_1",
+		Email:        "owner@example.com",
+		BandName:     "Os Testes",
+		BandTimezone: "America/Recife",
+		Role:         permissions.RoleOwner,
+	}
+}
+
+func viewerOwnerAccount() OwnerAccount {
+	account := ownerAccount()
+	account.Role = permissions.RoleViewer
+	return account
 }

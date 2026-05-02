@@ -74,6 +74,190 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /account/members:
+    get:
+      operationId: listAccountMembers
+      summary: List members for the authenticated user's active band
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Band members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountMembersResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot read account members in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /account/invites:
+    get:
+      operationId: listAccountInvites
+      summary: List invites for the authenticated user's active band
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Band invites
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInvitesResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot read account invites in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAccountInvite
+      summary: Create a pending viewer invite for manual sharing
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountInviteRequest'
+      responses:
+        '201':
+          description: Pending viewer invite created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInvite'
+        '400':
+          description: Invalid invite request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot create invites in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate pending invite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /account/invites/{inviteId}/revoke:
+    post:
+      operationId: revokeAccountInvite
+      summary: Revoke a pending viewer invite
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: inviteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invite revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInvite'
+        '400':
+          description: Invite cannot be revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot revoke invites in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Invite not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /account/invites/accept:
+    post:
+      operationId: acceptAccountInvite
+      summary: Accept a pending viewer invite by token
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptAccountInviteRequest'
+      responses:
+        '200':
+          description: Invite accepted or existing accepted membership returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountMember'
+        '400':
+          description: Invalid, expired, revoked, accepted, or mismatched invite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Invite token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Existing membership conflicts with invite acceptance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /inventory:
     get:
       operationId: listInventory
@@ -954,6 +1138,104 @@ components:
           $ref: '#/components/schemas/Role'
         canWrite:
           type: boolean
+    AccountMembersResponse:
+      type: object
+      required:
+        - members
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountMember'
+    AccountInvitesResponse:
+      type: object
+      required:
+        - invites
+      properties:
+        invites:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountInvite'
+    CreateAccountInviteRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+    AcceptAccountInviteRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+    AccountMember:
+      type: object
+      required:
+        - userId
+        - email
+        - bandId
+        - role
+        - joinedAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        bandId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/Role'
+        joinedAt:
+          type: string
+          format: date-time
+    AccountInvite:
+      type: object
+      required:
+        - id
+        - email
+        - role
+        - status
+        - expiresAt
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          $ref: '#/components/schemas/InviteStatus'
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        token:
+          type: string
+          minLength: 1
+          description: Returned only when a pending invite token is available for manual sharing.
+    InviteStatus:
+      type: string
+      enum:
+        - pending
+        - accepted
+        - revoked
+        - expired
     Role:
       type: string
       enum:

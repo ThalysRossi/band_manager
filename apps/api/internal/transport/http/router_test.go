@@ -218,6 +218,114 @@ func TestCalendarEventsRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestAccountMembersRouteRejectsUnauthenticatedRequest(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/account/members", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestAccountMembersRouteReturnsMembers(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/account/members", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body struct {
+		Members []struct {
+			Email string `json:"email"`
+			Role  string `json:"role"`
+		} `json:"members"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode members response: %v", err)
+	}
+
+	if len(body.Members) != 1 {
+		t.Fatalf("expected one member, got %d", len(body.Members))
+	}
+	if body.Members[0].Email != "band@example.com" {
+		t.Fatalf("expected member email, got %q", body.Members[0].Email)
+	}
+}
+
+func TestAccountInviteCreateReturnsTokenForOwner(t *testing.T) {
+	t.Parallel()
+
+	dependencies := testDependencies()
+	dependencies.AccountRepository = testAccountRepository{role: permissions.RoleOwner}
+	router := NewRouter(testConfig(), slog.Default(), dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/account/invites", strings.NewReader(`{"email":"viewer@example.com"}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_account_invite_1")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
+	}
+
+	var body struct {
+		Email string `json:"email"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode invite response: %v", err)
+	}
+
+	if body.Token == "" {
+		t.Fatal("expected invite token")
+	}
+}
+
+func TestAccountInviteMutationRejectsViewer(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodPost, "/account/invites", strings.NewReader(`{"email":"viewer@example.com"}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_account_invite_1")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, response.Code)
+	}
+}
+
+func TestAccountInviteAcceptRejectsInvalidToken(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodPost, "/account/invites/accept", strings.NewReader(`{"token":"missing"}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_account_invite_accept")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
+	}
+}
+
 func testConfig() config.Config {
 	return config.Config{
 		Environment:                "test",
@@ -246,20 +354,95 @@ func (authenticator testAuthenticator) Authenticate(ctx context.Context, bearerT
 	}, nil
 }
 
-type testAccountRepository struct{}
+type testAccountRepository struct {
+	role permissions.Role
+}
 
 func (repository testAccountRepository) CreateOwnerAccount(ctx context.Context, command accounts.CreateOwnerAccountCommand) (accounts.OwnerAccount, error) {
 	return accounts.OwnerAccount{}, nil
 }
 
 func (repository testAccountRepository) GetCurrentAccount(ctx context.Context, query accounts.CurrentAccountQuery) (accounts.OwnerAccount, error) {
+	role := repository.role
+	if role == "" {
+		role = permissions.RoleViewer
+	}
+
 	return accounts.OwnerAccount{
 		UserID:       "00000000-0000-0000-0000-000000000001",
 		BandID:       "00000000-0000-0000-0000-000000000002",
 		Email:        "band@example.com",
 		BandName:     "Os Testes",
 		BandTimezone: "America/Recife",
-		Role:         permissions.RoleViewer,
+		Role:         role,
+	}, nil
+}
+
+func (repository testAccountRepository) ListBandMembers(ctx context.Context, query accounts.ListBandMembersQuery) ([]accounts.BandMember, error) {
+	return []accounts.BandMember{
+		{
+			UserID:   query.Account.UserID,
+			Email:    query.Account.Email,
+			BandID:   query.Account.BandID,
+			Role:     query.Account.Role,
+			JoinedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		},
+	}, nil
+}
+
+func (repository testAccountRepository) ListBandInvites(ctx context.Context, query accounts.ListBandInvitesQuery) ([]accounts.BandInvite, error) {
+	return []accounts.BandInvite{
+		{
+			ID:        "11111111-1111-1111-1111-111111111111",
+			BandID:    query.Account.BandID,
+			Email:     "viewer@example.com",
+			Role:      permissions.RoleViewer,
+			Status:    accounts.InviteStatusPending,
+			ExpiresAt: time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC),
+			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		},
+	}, nil
+}
+
+func (repository testAccountRepository) CreateBandInvite(ctx context.Context, command accounts.CreateBandInviteCommand) (accounts.BandInvite, error) {
+	return accounts.BandInvite{
+		ID:        "11111111-1111-1111-1111-111111111111",
+		BandID:    command.Account.BandID,
+		Email:     command.Email,
+		Role:      command.Role,
+		Status:    command.Status,
+		ExpiresAt: command.ExpiresAt,
+		CreatedAt: command.CreatedAt,
+		UpdatedAt: command.CreatedAt,
+		Token:     command.Token,
+	}, nil
+}
+
+func (repository testAccountRepository) RevokeBandInvite(ctx context.Context, command accounts.RevokeBandInviteCommand) (accounts.BandInvite, error) {
+	return accounts.BandInvite{
+		ID:        command.InviteID,
+		BandID:    command.Account.BandID,
+		Email:     "viewer@example.com",
+		Role:      permissions.RoleViewer,
+		Status:    accounts.InviteStatusRevoked,
+		ExpiresAt: time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC),
+		CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: command.RevokedAt,
+	}, nil
+}
+
+func (repository testAccountRepository) AcceptBandInvite(ctx context.Context, command accounts.AcceptBandInviteCommand) (accounts.BandMember, error) {
+	if command.Token == "missing" {
+		return accounts.BandMember{}, accounts.ErrInviteNotFound
+	}
+
+	return accounts.BandMember{
+		UserID:   "00000000-0000-0000-0000-000000000003",
+		Email:    command.Email,
+		BandID:   "00000000-0000-0000-0000-000000000002",
+		Role:     permissions.RoleViewer,
+		JoinedAt: command.AcceptedAt,
 	}, nil
 }
 

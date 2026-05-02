@@ -136,6 +136,26 @@ func (repository *fakeRepository) GetCurrentAccount(ctx context.Context, query a
 	return repository.account, nil
 }
 
+func (repository *fakeRepository) ListBandMembers(ctx context.Context, query accounts.ListBandMembersQuery) ([]accounts.BandMember, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) ListBandInvites(ctx context.Context, query accounts.ListBandInvitesQuery) ([]accounts.BandInvite, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) CreateBandInvite(ctx context.Context, command accounts.CreateBandInviteCommand) (accounts.BandInvite, error) {
+	return accounts.BandInvite{}, nil
+}
+
+func (repository *fakeRepository) RevokeBandInvite(ctx context.Context, command accounts.RevokeBandInviteCommand) (accounts.BandInvite, error) {
+	return accounts.BandInvite{}, nil
+}
+
+func (repository *fakeRepository) AcceptBandInvite(ctx context.Context, command accounts.AcceptBandInviteCommand) (accounts.BandMember, error) {
+	return accounts.BandMember{}, nil
+}
+
 func testHandler() Handler {
 	return testHandlerWithRepository(&fakeRepository{})
 }

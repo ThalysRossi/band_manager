@@ -137,6 +137,140 @@ func TestRepositoryCreateCashCheckoutIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRepositoryReserveAndCompletePixCheckout(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Pix", 4)
+	repository := NewRepository(pool)
+	command := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+
+	reservedSale, found, err := repository.ReservePixCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("reserve pix checkout: %v", err)
+	}
+	if found {
+		t.Fatal("expected new pix checkout reservation")
+	}
+	if reservedSale.Status != applicationmerchbooth.SaleStatusPendingPayment {
+		t.Fatalf("expected pending sale, got %q", reservedSale.Status)
+	}
+
+	assertTableCount(t, pool, "inventory_reservations", "band_id = $1 AND sale_id = $2 AND variant_id = $3 AND status = $4", []interface{}{account.BandID, command.SaleID, inventoryProduct.Variants[0].ID, "reserved"}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = $2", []interface{}{inventoryProduct.Variants[0].ID, 4}, 1)
+	assertTableCount(t, pool, "transactions", "sale_id = $1", []interface{}{command.SaleID}, 0)
+
+	requestHash, err := applicationmerchbooth.HashPixCheckoutRequest(command)
+	if err != nil {
+		t.Fatalf("hash pix checkout request: %v", err)
+	}
+
+	completedSale, err := repository.CompletePixCheckoutPayment(ctx, applicationmerchbooth.CompletePixCheckoutPaymentCommand{
+		Account:     account,
+		SaleID:      command.SaleID,
+		PaymentID:   command.PaymentID,
+		RequestID:   command.RequestID,
+		RequestHash: requestHash,
+		ProviderResult: applicationmerchbooth.PixPayment{
+			Provider:             "mercadopago",
+			ProviderOrderID:      "order_1",
+			ProviderPaymentID:    "payment_1",
+			ProviderReferenceID:  "reference_1",
+			ExternalReference:    command.ExternalReference,
+			ProviderStatus:       "action_required",
+			ProviderStatusDetail: "waiting_transfer",
+			LocalStatus:          applicationmerchbooth.PaymentStatusActionRequired,
+			Amount:               reservedSale.Total,
+			ExpiresAt:            command.ExpiresAt,
+			QRCode:               "pix-copy-paste",
+			QRCodeBase64:         "base64",
+			TicketURL:            "https://example.test/ticket",
+			RawProviderResponse:  []byte(`{"id":"order_1"}`),
+		},
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("complete pix checkout payment: %v", err)
+	}
+
+	if completedSale.Payment.PixQRCode != "pix-copy-paste" {
+		t.Fatalf("expected pix qr code, got %q", completedSale.Payment.PixQRCode)
+	}
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_id = $3", []interface{}{account.BandID, "merch_booth.pix_checkout_payment_created", command.PaymentID}, 1)
+
+	idempotentSale, found, err := repository.ReservePixCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("load idempotent pix checkout: %v", err)
+	}
+	if !found {
+		t.Fatal("expected idempotent pix checkout")
+	}
+	if idempotentSale.ID != completedSale.ID {
+		t.Fatalf("expected idempotent sale id %q, got %q", completedSale.ID, idempotentSale.ID)
+	}
+}
+
+func TestRepositoryFailPixCheckoutPaymentCreationReleasesReservation(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Pix Fail", 3)
+	repository := NewRepository(pool)
+	command := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 1)
+
+	_, _, err := repository.ReservePixCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("reserve pix checkout: %v", err)
+	}
+
+	err = repository.FailPixCheckoutPaymentCreation(ctx, applicationmerchbooth.FailPixCheckoutPaymentCreationCommand{
+		Account:        account,
+		SaleID:         command.SaleID,
+		PaymentID:      command.PaymentID,
+		RequestID:      command.RequestID,
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("fail pix checkout payment creation: %v", err)
+	}
+
+	assertTableCount(t, pool, "inventory_reservations", "band_id = $1 AND sale_id = $2 AND variant_id = $3 AND status = $4", []interface{}{account.BandID, command.SaleID, inventoryProduct.Variants[0].ID, "released"}, 1)
+	assertTableCount(t, pool, "payments", "id = $1 AND status = $2", []interface{}{command.PaymentID, "failed"}, 1)
+	assertTableCount(t, pool, "sales", "id = $1 AND status = $2", []interface{}{command.SaleID, "canceled"}, 1)
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_id = $3", []interface{}{account.BandID, "merch_booth.pix_checkout_payment_creation_failed", command.SaleID}, 1)
+}
+
+func TestRepositoryPixReservationReducesAvailableCheckoutStock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Pix Reserved Stock", 3)
+	repository := NewRepository(pool)
+	firstCommand := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+	secondCommand := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+
+	_, _, err := repository.ReservePixCheckout(ctx, firstCommand)
+	if err != nil {
+		t.Fatalf("reserve first pix checkout: %v", err)
+	}
+
+	_, _, err = repository.ReservePixCheckout(ctx, secondCommand)
+	if !errors.Is(err, applicationmerchbooth.ErrInsufficientStock) {
+		t.Fatalf("expected insufficient stock from active reservation, got %v", err)
+	}
+
+	cashCommand := validCashCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+	_, err = repository.CreateCashCheckout(ctx, cashCommand)
+	if !errors.Is(err, applicationmerchbooth.ErrInsufficientStock) {
+		t.Fatalf("expected cash checkout to respect active reservation, got %v", err)
+	}
+}
+
 func TestRepositoryListBoothItemsIncludesSoldOutVariants(t *testing.T) {
 	t.Parallel()
 
@@ -380,6 +514,27 @@ func validCashCheckoutCommand(account applicationmerchbooth.AccountContext, vari
 		IdempotencyKey: "idem_checkout_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		RequestID:      "request_checkout_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		CreatedAt:      testTimestamp().Add(2 * time.Minute),
+	}
+}
+
+func validPixCheckoutCommand(account applicationmerchbooth.AccountContext, variantID string, quantity int) applicationmerchbooth.CreatePixCheckoutCommand {
+	saleID := uuid.NewString()
+	return applicationmerchbooth.CreatePixCheckoutCommand{
+		Account:           account,
+		SaleID:            saleID,
+		PaymentID:         uuid.NewString(),
+		ExternalReference: "sale_" + saleID,
+		Items: []applicationmerchbooth.CartItem{
+			{
+				VariantID: variantID,
+				Quantity:  quantity,
+			},
+		},
+		PayerEmail:     "band@example.com",
+		IdempotencyKey: "idem_pix_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
+		RequestID:      "request_pix_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
+		CreatedAt:      testTimestamp().Add(3 * time.Minute),
+		ExpiresAt:      testTimestamp().Add(33 * time.Minute),
 	}
 }
 

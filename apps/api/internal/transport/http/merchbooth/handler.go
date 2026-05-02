@@ -19,6 +19,7 @@ type Handler struct {
 	authenticator     session.Authenticator
 	accountRepository accounts.BandAccountRepository
 	merchRepository   applicationmerchbooth.Repository
+	paymentProvider   applicationmerchbooth.PaymentProvider
 	logger            *slog.Logger
 	now               func() time.Time
 }
@@ -42,6 +43,10 @@ type BoothItemResponse struct {
 }
 
 type CashCheckoutRequest struct {
+	Items []CartItemRequest `json:"items"`
+}
+
+type PixCheckoutRequest struct {
 	Items []CartItemRequest `json:"items"`
 }
 
@@ -81,13 +86,24 @@ type SaleItemResponse struct {
 }
 
 type PaymentResponse struct {
-	ID        string        `json:"id"`
-	SaleID    string        `json:"saleId"`
-	Method    string        `json:"method"`
-	Status    string        `json:"status"`
-	Amount    MoneyResponse `json:"amount"`
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
+	ID                   string        `json:"id"`
+	SaleID               string        `json:"saleId"`
+	Method               string        `json:"method"`
+	Status               string        `json:"status"`
+	Amount               MoneyResponse `json:"amount"`
+	Provider             string        `json:"provider,omitempty"`
+	ProviderOrderID      string        `json:"providerOrderId,omitempty"`
+	ProviderPaymentID    string        `json:"providerPaymentId,omitempty"`
+	ProviderReferenceID  string        `json:"providerReferenceId,omitempty"`
+	ExternalReference    string        `json:"externalReference,omitempty"`
+	ProviderStatus       string        `json:"providerStatus,omitempty"`
+	ProviderStatusDetail string        `json:"providerStatusDetail,omitempty"`
+	ExpiresAt            time.Time     `json:"expiresAt,omitempty"`
+	PixQRCode            string        `json:"pixQrCode,omitempty"`
+	PixQRCodeBase64      string        `json:"pixQrCodeBase64,omitempty"`
+	PixTicketURL         string        `json:"pixTicketUrl,omitempty"`
+	CreatedAt            time.Time     `json:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt"`
 }
 
 type TransactionResponse struct {
@@ -109,11 +125,12 @@ type PhotoResponse struct {
 	SizeBytes   int    `json:"sizeBytes"`
 }
 
-func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, logger *slog.Logger) Handler {
+func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, logger *slog.Logger) Handler {
 	return Handler{
 		authenticator:     authenticator,
 		accountRepository: accountRepository,
 		merchRepository:   merchRepository,
+		paymentProvider:   paymentProvider,
 		logger:            logger,
 		now:               time.Now,
 	}
@@ -172,6 +189,43 @@ func (handler Handler) CreateCashCheckout(response http.ResponseWriter, request 
 	handler.writeJSON(response, http.StatusCreated, toSaleResponse(sale))
 }
 
+func (handler Handler) CreatePixCheckout(response http.ResponseWriter, request *http.Request) {
+	accountContext, ok := handler.accountContext(response, request)
+	if !ok {
+		return
+	}
+
+	idempotencyKey, requestID, ok := handler.mutationHeaders(response, request)
+	if !ok {
+		return
+	}
+
+	var body PixCheckoutRequest
+	if !handler.decodeJSON(response, request, &body) {
+		return
+	}
+
+	items, ok := toCartItemInputs(response, body.Items)
+	if !ok {
+		return
+	}
+
+	sale, err := applicationmerchbooth.CreatePixCheckout(request.Context(), handler.merchRepository, handler.paymentProvider, applicationmerchbooth.CreatePixCheckoutInput{
+		Account:        accountContext,
+		Items:          items,
+		PayerEmail:     accountContext.Email,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		CreatedAt:      handler.now().UTC(),
+	})
+	if err != nil {
+		handler.writeMerchBoothError(response, "pix checkout failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusCreated, toSaleResponse(sale))
+}
+
 func (handler Handler) accountContext(response http.ResponseWriter, request *http.Request) (applicationmerchbooth.AccountContext, bool) {
 	authenticatedUser, ok := handler.authenticate(response, request)
 	if !ok {
@@ -191,6 +245,7 @@ func (handler Handler) accountContext(response http.ResponseWriter, request *htt
 	return applicationmerchbooth.AccountContext{
 		UserID: account.UserID,
 		BandID: account.BandID,
+		Email:  account.Email,
 		Role:   account.Role,
 	}, true
 }
@@ -252,6 +307,8 @@ func (handler Handler) writeMerchBoothError(response http.ResponseWriter, logMes
 		handler.writeError(response, http.StatusNotFound, "booth_item_not_found", err.Error())
 	case errors.Is(err, applicationmerchbooth.ErrIdempotencyConflict):
 		handler.writeError(response, http.StatusConflict, "idempotency_conflict", err.Error())
+	case errors.Is(err, applicationmerchbooth.ErrPaymentProvider):
+		handler.writeError(response, http.StatusBadGateway, "payment_provider_failed", err.Error())
 	case strings.Contains(err.Error(), "alpha write access requires owner role"):
 		handler.writeError(response, http.StatusForbidden, "write_forbidden", err.Error())
 	default:
@@ -363,13 +420,24 @@ func toSaleItemResponses(items []applicationmerchbooth.SaleItem) []SaleItemRespo
 
 func toPaymentResponse(payment applicationmerchbooth.Payment) PaymentResponse {
 	return PaymentResponse{
-		ID:        payment.ID,
-		SaleID:    payment.SaleID,
-		Method:    string(payment.Method),
-		Status:    string(payment.Status),
-		Amount:    toMoneyResponse(payment.Amount.Amount, payment.Amount.Currency),
-		CreatedAt: payment.CreatedAt,
-		UpdatedAt: payment.UpdatedAt,
+		ID:                   payment.ID,
+		SaleID:               payment.SaleID,
+		Method:               string(payment.Method),
+		Status:               string(payment.Status),
+		Amount:               toMoneyResponse(payment.Amount.Amount, payment.Amount.Currency),
+		Provider:             payment.Provider,
+		ProviderOrderID:      payment.ProviderOrderID,
+		ProviderPaymentID:    payment.ProviderPaymentID,
+		ProviderReferenceID:  payment.ProviderReferenceID,
+		ExternalReference:    payment.ExternalReference,
+		ProviderStatus:       payment.ProviderStatus,
+		ProviderStatusDetail: payment.ProviderStatusDetail,
+		ExpiresAt:            payment.ExpiresAt,
+		PixQRCode:            payment.PixQRCode,
+		PixQRCodeBase64:      payment.PixQRCodeBase64,
+		PixTicketURL:         payment.PixTicketURL,
+		CreatedAt:            payment.CreatedAt,
+		UpdatedAt:            payment.UpdatedAt,
 	}
 }
 

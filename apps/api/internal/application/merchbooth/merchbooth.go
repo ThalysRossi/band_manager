@@ -2,6 +2,9 @@ package merchbooth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -19,16 +22,25 @@ var (
 	ErrInsufficientStock   = errors.New("insufficient stock")
 	ErrBoothItemNotFound   = errors.New("booth item not found")
 	ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
+	ErrPaymentProvider     = errors.New("payment provider error")
 )
 
 type Repository interface {
 	ListBoothItems(ctx context.Context, query ListBoothItemsQuery) ([]BoothItem, error)
 	CreateCashCheckout(ctx context.Context, command CreateCashCheckoutCommand) (Sale, error)
+	ReservePixCheckout(ctx context.Context, command CreatePixCheckoutCommand) (Sale, bool, error)
+	CompletePixCheckoutPayment(ctx context.Context, command CompletePixCheckoutPaymentCommand) (Sale, error)
+	FailPixCheckoutPaymentCreation(ctx context.Context, command FailPixCheckoutPaymentCreationCommand) error
+}
+
+type PaymentProvider interface {
+	CreatePixPayment(ctx context.Context, command CreatePixPaymentCommand) (PixPayment, error)
 }
 
 type AccountContext struct {
 	UserID string
 	BandID string
+	Email  string
 	Role   permissions.Role
 }
 
@@ -49,6 +61,15 @@ type CreateCashCheckoutInput struct {
 	CreatedAt      time.Time
 }
 
+type CreatePixCheckoutInput struct {
+	Account        AccountContext
+	Items          []CartItemInput
+	PayerEmail     string
+	IdempotencyKey string
+	RequestID      string
+	CreatedAt      time.Time
+}
+
 type ListBoothItemsQuery struct {
 	Account AccountContext
 }
@@ -59,6 +80,66 @@ type CreateCashCheckoutCommand struct {
 	IdempotencyKey string
 	RequestID      string
 	CreatedAt      time.Time
+}
+
+type CreatePixCheckoutCommand struct {
+	Account           AccountContext
+	SaleID            string
+	PaymentID         string
+	ExternalReference string
+	Items             []CartItem
+	PayerEmail        string
+	IdempotencyKey    string
+	RequestID         string
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+}
+
+type CompletePixCheckoutPaymentCommand struct {
+	Account        AccountContext
+	SaleID         string
+	PaymentID      string
+	RequestID      string
+	RequestHash    string
+	ProviderResult PixPayment
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
+type FailPixCheckoutPaymentCreationCommand struct {
+	Account        AccountContext
+	SaleID         string
+	PaymentID      string
+	RequestID      string
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
+type CreatePixPaymentCommand struct {
+	SaleID            string
+	PaymentID         string
+	ExternalReference string
+	Amount            inventorydomain.Money
+	PayerEmail        string
+	IdempotencyKey    string
+	ExpiresAt         time.Time
+}
+
+type PixPayment struct {
+	Provider             string
+	ProviderOrderID      string
+	ProviderPaymentID    string
+	ProviderReferenceID  string
+	ExternalReference    string
+	ProviderStatus       string
+	ProviderStatusDetail string
+	LocalStatus          PaymentStatus
+	Amount               inventorydomain.Money
+	ExpiresAt            time.Time
+	QRCode               string
+	QRCodeBase64         string
+	TicketURL            string
+	RawProviderResponse  []byte
 }
 
 type CartItem struct {
@@ -111,13 +192,24 @@ type SaleItem struct {
 }
 
 type Payment struct {
-	ID        string
-	SaleID    string
-	Method    PaymentMethod
-	Status    PaymentStatus
-	Amount    inventorydomain.Money
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                   string
+	SaleID               string
+	Method               PaymentMethod
+	Status               PaymentStatus
+	Amount               inventorydomain.Money
+	Provider             string
+	ProviderOrderID      string
+	ProviderPaymentID    string
+	ProviderReferenceID  string
+	ExternalReference    string
+	ProviderStatus       string
+	ProviderStatusDetail string
+	ExpiresAt            time.Time
+	PixQRCode            string
+	PixQRCodeBase64      string
+	PixTicketURL         string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type Transaction struct {
@@ -131,19 +223,28 @@ type Transaction struct {
 type SaleStatus string
 
 const (
-	SaleStatusFinalized SaleStatus = "finalized"
+	SaleStatusFinalized      SaleStatus = "finalized"
+	SaleStatusPendingPayment SaleStatus = "pending_payment"
+	SaleStatusCanceled       SaleStatus = "canceled"
 )
 
 type PaymentMethod string
 
 const (
 	PaymentMethodCash PaymentMethod = "cash"
+	PaymentMethodPix  PaymentMethod = "pix"
 )
 
 type PaymentStatus string
 
 const (
-	PaymentStatusConfirmed PaymentStatus = "confirmed"
+	PaymentStatusConfirmed       PaymentStatus = "confirmed"
+	PaymentStatusProviderPending PaymentStatus = "provider_pending"
+	PaymentStatusActionRequired  PaymentStatus = "action_required"
+	PaymentStatusProcessing      PaymentStatus = "processing"
+	PaymentStatusFailed          PaymentStatus = "failed"
+	PaymentStatusCanceled        PaymentStatus = "canceled"
+	PaymentStatusExpired         PaymentStatus = "expired"
 )
 
 func ListBoothItems(ctx context.Context, repository Repository, input ListBoothItemsInput) ([]BoothItem, error) {
@@ -169,6 +270,62 @@ func CreateCashCheckout(ctx context.Context, repository Repository, input Create
 	sale, err := repository.CreateCashCheckout(ctx, command)
 	if err != nil {
 		return Sale{}, fmt.Errorf("create cash checkout band_id=%q: %w", command.Account.BandID, err)
+	}
+
+	return sale, nil
+}
+
+func CreatePixCheckout(ctx context.Context, repository Repository, paymentProvider PaymentProvider, input CreatePixCheckoutInput) (Sale, error) {
+	command, requestHash, err := validateCreatePixCheckoutInput(input)
+	if err != nil {
+		return Sale{}, err
+	}
+
+	reservedSale, found, err := repository.ReservePixCheckout(ctx, command)
+	if err != nil {
+		return Sale{}, fmt.Errorf("reserve pix checkout band_id=%q: %w", command.Account.BandID, err)
+	}
+	if found {
+		return reservedSale, nil
+	}
+
+	providerResult, err := paymentProvider.CreatePixPayment(ctx, CreatePixPaymentCommand{
+		SaleID:            command.SaleID,
+		PaymentID:         command.PaymentID,
+		ExternalReference: command.ExternalReference,
+		Amount:            reservedSale.Total,
+		PayerEmail:        command.PayerEmail,
+		IdempotencyKey:    command.IdempotencyKey,
+		ExpiresAt:         command.ExpiresAt,
+	})
+	if err != nil {
+		releaseErr := repository.FailPixCheckoutPaymentCreation(ctx, FailPixCheckoutPaymentCreationCommand{
+			Account:        command.Account,
+			SaleID:         command.SaleID,
+			PaymentID:      command.PaymentID,
+			RequestID:      command.RequestID,
+			IdempotencyKey: command.IdempotencyKey,
+			UpdatedAt:      command.CreatedAt,
+		})
+		if releaseErr != nil {
+			return Sale{}, fmt.Errorf("create pix payment failed and reservation release failed band_id=%q sale_id=%q: provider_error=%w release_error=%v", command.Account.BandID, command.SaleID, err, releaseErr)
+		}
+
+		return Sale{}, fmt.Errorf("%w: create pix payment band_id=%q sale_id=%q: %v", ErrPaymentProvider, command.Account.BandID, command.SaleID, err)
+	}
+
+	sale, err := repository.CompletePixCheckoutPayment(ctx, CompletePixCheckoutPaymentCommand{
+		Account:        command.Account,
+		SaleID:         command.SaleID,
+		PaymentID:      command.PaymentID,
+		RequestID:      command.RequestID,
+		RequestHash:    requestHash,
+		ProviderResult: providerResult,
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt,
+	})
+	if err != nil {
+		return Sale{}, fmt.Errorf("complete pix checkout payment band_id=%q sale_id=%q: %w", command.Account.BandID, command.SaleID, err)
 	}
 
 	return sale, nil
@@ -239,6 +396,70 @@ func validateCreateCashCheckoutInput(input CreateCashCheckoutInput) (CreateCashC
 		RequestID:      requestID,
 		CreatedAt:      input.CreatedAt.UTC(),
 	}, nil
+}
+
+func validateCreatePixCheckoutInput(input CreatePixCheckoutInput) (CreatePixCheckoutCommand, string, error) {
+	cashLikeInput := CreateCashCheckoutInput{
+		Account:        input.Account,
+		Items:          input.Items,
+		IdempotencyKey: input.IdempotencyKey,
+		RequestID:      input.RequestID,
+		CreatedAt:      input.CreatedAt,
+	}
+	cashCommand, err := validateCreateCashCheckoutInput(cashLikeInput)
+	if err != nil {
+		return CreatePixCheckoutCommand{}, "", err
+	}
+
+	payerEmail := strings.TrimSpace(input.PayerEmail)
+	if payerEmail == "" {
+		return CreatePixCheckoutCommand{}, "", fmt.Errorf("payer email is required")
+	}
+	if !strings.Contains(payerEmail, "@") {
+		return CreatePixCheckoutCommand{}, "", fmt.Errorf("payer email %q must contain @", payerEmail)
+	}
+
+	saleID := uuid.NewString()
+	paymentID := uuid.NewString()
+	command := CreatePixCheckoutCommand{
+		Account:           cashCommand.Account,
+		SaleID:            saleID,
+		PaymentID:         paymentID,
+		ExternalReference: "sale_" + saleID,
+		Items:             cashCommand.Items,
+		PayerEmail:        payerEmail,
+		IdempotencyKey:    cashCommand.IdempotencyKey,
+		RequestID:         cashCommand.RequestID,
+		CreatedAt:         cashCommand.CreatedAt,
+		ExpiresAt:         cashCommand.CreatedAt.Add(30 * time.Minute),
+	}
+
+	requestHash, err := HashPixCheckoutRequest(command)
+	if err != nil {
+		return CreatePixCheckoutCommand{}, "", err
+	}
+
+	return command, requestHash, nil
+}
+
+func HashPixCheckoutRequest(command CreatePixCheckoutCommand) (string, error) {
+	body, err := json.Marshal(struct {
+		BandID     string        `json:"bandId"`
+		Items      []CartItem    `json:"items"`
+		Method     PaymentMethod `json:"method"`
+		PayerEmail string        `json:"payerEmail"`
+	}{
+		BandID:     command.Account.BandID,
+		Items:      command.Items,
+		Method:     PaymentMethodPix,
+		PayerEmail: command.PayerEmail,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal pix checkout request hash body: %w", err)
+	}
+
+	hash := sha256.Sum256(body)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func validateReadAccount(account AccountContext) error {

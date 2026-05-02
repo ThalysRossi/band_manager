@@ -60,12 +60,13 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 
 func testConfig() config.Config {
 	return config.Config{
-		Environment:       "test",
-		Address:           ":8080",
-		AllowedOrigins:    []string{"http://localhost:5173"},
-		DatabaseURL:       "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
-		RedisURL:          "redis://localhost:6379/0",
-		SupabaseJWTSecret: "secret",
+		Environment:            "test",
+		Address:                ":8080",
+		AllowedOrigins:         []string{"http://localhost:5173"},
+		DatabaseURL:            "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
+		RedisURL:               "redis://localhost:6379/0",
+		SupabaseJWTSecret:      "secret",
+		MercadoPagoAccessToken: "token",
 	}
 }
 
@@ -121,11 +122,30 @@ func (repository testMerchBoothRepository) CreateCashCheckout(ctx context.Contex
 	return applicationmerchbooth.Sale{}, nil
 }
 
+func (repository testMerchBoothRepository) ReservePixCheckout(ctx context.Context, command applicationmerchbooth.CreatePixCheckoutCommand) (applicationmerchbooth.Sale, bool, error) {
+	return applicationmerchbooth.Sale{}, false, nil
+}
+
+func (repository testMerchBoothRepository) CompletePixCheckoutPayment(ctx context.Context, command applicationmerchbooth.CompletePixCheckoutPaymentCommand) (applicationmerchbooth.Sale, error) {
+	return applicationmerchbooth.Sale{}, nil
+}
+
+func (repository testMerchBoothRepository) FailPixCheckoutPaymentCreation(ctx context.Context, command applicationmerchbooth.FailPixCheckoutPaymentCreationCommand) error {
+	return nil
+}
+
+type testPaymentProvider struct{}
+
+func (provider testPaymentProvider) CreatePixPayment(ctx context.Context, command applicationmerchbooth.CreatePixPaymentCommand) (applicationmerchbooth.PixPayment, error) {
+	return applicationmerchbooth.PixPayment{}, nil
+}
+
 func testDependencies() Dependencies {
 	return Dependencies{
 		Authenticator:        testAuthenticator{},
 		AccountRepository:    testAccountRepository{},
 		InventoryRepository:  testInventoryRepository{},
 		MerchBoothRepository: testMerchBoothRepository{},
+		PaymentProvider:      testPaymentProvider{},
 	}
 }

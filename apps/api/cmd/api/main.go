@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thalys/band-manager/apps/api/internal/infrastructure/mercadopago"
 	postgresaccount "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/account"
 	postgresinventory "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/inventory"
 	postgresmerchbooth "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/merchbooth"
@@ -47,6 +48,11 @@ func main() {
 	accountRepository := postgresaccount.NewRepository(databasePool)
 	inventoryRepository := postgresinventory.NewRepository(databasePool)
 	merchBoothRepository := postgresmerchbooth.NewRepository(databasePool)
+	paymentProvider, err := mercadopago.NewClient(appConfig.MercadoPagoAccessToken, "https://api.mercadopago.com", http.DefaultClient, appLogger)
+	if err != nil {
+		appLogger.Error("mercadopago client creation failed", "error", err)
+		os.Exit(1)
+	}
 	server := &http.Server{
 		Addr: appConfig.Address,
 		Handler: httpapi.NewRouter(appConfig, appLogger, httpapi.Dependencies{
@@ -54,6 +60,7 @@ func main() {
 			AccountRepository:    accountRepository,
 			InventoryRepository:  inventoryRepository,
 			MerchBoothRepository: merchBoothRepository,
+			PaymentProvider:      paymentProvider,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,

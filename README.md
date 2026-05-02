@@ -37,6 +37,7 @@ API_ALLOWED_ORIGINS=http://localhost:5173 \
 DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable \
 REDIS_URL=redis://localhost:6379/0 \
 SUPABASE_JWT_SECRET=replace-me \
+MERCADOPAGO_ACCESS_TOKEN=replace-me \
 pnpm dev:api
 ```
 

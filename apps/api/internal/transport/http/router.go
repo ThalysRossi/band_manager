@@ -21,6 +21,7 @@ type Dependencies struct {
 	AccountRepository    accounts.BandAccountRepository
 	InventoryRepository  applicationinventory.Repository
 	MerchBoothRepository applicationmerchbooth.Repository
+	PaymentProvider      applicationmerchbooth.PaymentProvider
 }
 
 func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dependencies) http.Handler {
@@ -43,9 +44,10 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 	router.Put("/inventory/variants/{variantID}", inventoryHandler.UpdateVariant)
 	router.Delete("/inventory/variants/{variantID}", inventoryHandler.SoftDeleteVariant)
 
-	merchBoothHandler := merchboothhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.MerchBoothRepository, appLogger)
+	merchBoothHandler := merchboothhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.MerchBoothRepository, dependencies.PaymentProvider, appLogger)
 	router.Get("/merch-booth/items", merchBoothHandler.ListBoothItems)
 	router.Post("/merch-booth/checkouts/cash", merchBoothHandler.CreateCashCheckout)
+	router.Post("/merch-booth/checkouts/pix", merchBoothHandler.CreatePixCheckout)
 
 	return router
 }

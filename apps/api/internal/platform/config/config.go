@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	Environment       string
-	Address           string
-	AllowedOrigins    []string
-	DatabaseURL       string
-	RedisURL          string
-	SupabaseJWTSecret string
+	Environment            string
+	Address                string
+	AllowedOrigins         []string
+	DatabaseURL            string
+	RedisURL               string
+	SupabaseJWTSecret      string
+	MercadoPagoAccessToken string
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -47,18 +48,24 @@ func LoadFromEnvironment() (Config, error) {
 		return Config{}, err
 	}
 
+	mercadoPagoAccessToken, err := requiredEnv("MERCADOPAGO_ACCESS_TOKEN")
+	if err != nil {
+		return Config{}, err
+	}
+
 	allowedOrigins, err := parseAllowedOrigins(originsValue)
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		Environment:       environment,
-		Address:           address,
-		AllowedOrigins:    allowedOrigins,
-		DatabaseURL:       databaseURL,
-		RedisURL:          redisURL,
-		SupabaseJWTSecret: supabaseJWTSecret,
+		Environment:            environment,
+		Address:                address,
+		AllowedOrigins:         allowedOrigins,
+		DatabaseURL:            databaseURL,
+		RedisURL:               redisURL,
+		SupabaseJWTSecret:      supabaseJWTSecret,
+		MercadoPagoAccessToken: mercadoPagoAccessToken,
 	}, nil
 }
 

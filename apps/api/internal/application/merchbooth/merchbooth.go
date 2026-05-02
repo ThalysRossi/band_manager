@@ -2,12 +2,15 @@ package merchbooth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +26,8 @@ var (
 	ErrBoothItemNotFound   = errors.New("booth item not found")
 	ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
 	ErrPaymentProvider     = errors.New("payment provider error")
+	ErrWebhookSignature    = errors.New("webhook signature is invalid")
+	ErrPaymentNotFound     = errors.New("payment not found")
 )
 
 type Repository interface {
@@ -31,10 +36,14 @@ type Repository interface {
 	ReservePixCheckout(ctx context.Context, command CreatePixCheckoutCommand) (Sale, bool, error)
 	CompletePixCheckoutPayment(ctx context.Context, command CompletePixCheckoutPaymentCommand) (Sale, error)
 	FailPixCheckoutPaymentCreation(ctx context.Context, command FailPixCheckoutPaymentCreationCommand) error
+	GetPixPaymentProviderOrderID(ctx context.Context, query GetPixPaymentProviderOrderIDQuery) (string, error)
+	ApplyPixPaymentStatus(ctx context.Context, command ApplyPixPaymentStatusCommand) (Sale, error)
+	RecordPaymentEvent(ctx context.Context, command PaymentEventCommand) error
 }
 
 type PaymentProvider interface {
 	CreatePixPayment(ctx context.Context, command CreatePixPaymentCommand) (PixPayment, error)
+	GetPaymentStatus(ctx context.Context, command GetPaymentStatusCommand) (PixPayment, error)
 }
 
 type AccountContext struct {
@@ -70,6 +79,14 @@ type CreatePixCheckoutInput struct {
 	CreatedAt      time.Time
 }
 
+type VerifyPixPaymentInput struct {
+	Account        AccountContext
+	PaymentID      string
+	IdempotencyKey string
+	RequestID      string
+	UpdatedAt      time.Time
+}
+
 type ListBoothItemsQuery struct {
 	Account AccountContext
 }
@@ -95,6 +112,14 @@ type CreatePixCheckoutCommand struct {
 	ExpiresAt         time.Time
 }
 
+type VerifyPixPaymentCommand struct {
+	Account        AccountContext
+	PaymentID      string
+	IdempotencyKey string
+	RequestID      string
+	UpdatedAt      time.Time
+}
+
 type CompletePixCheckoutPaymentCommand struct {
 	Account        AccountContext
 	SaleID         string
@@ -115,6 +140,35 @@ type FailPixCheckoutPaymentCreationCommand struct {
 	UpdatedAt      time.Time
 }
 
+type GetPixPaymentProviderOrderIDQuery struct {
+	Account   AccountContext
+	PaymentID string
+}
+
+type ApplyPixPaymentStatusCommand struct {
+	ProviderResult PixPayment
+	RequestID      string
+	IdempotencyKey string
+	UpdatedAt      time.Time
+}
+
+type PaymentEventCommand struct {
+	Provider           string
+	ProviderOrderID    string
+	BandID             string
+	SaleID             string
+	PaymentID          string
+	WebhookRequestID   string
+	SignatureTimestamp time.Time
+	SignatureVerified  bool
+	RawQuery           string
+	RawBody            []byte
+	ProcessingStatus   PaymentEventProcessingStatus
+	ProcessingError    string
+	ReceivedAt         time.Time
+	ProcessedAt        time.Time
+}
+
 type CreatePixPaymentCommand struct {
 	SaleID            string
 	PaymentID         string
@@ -123,6 +177,31 @@ type CreatePixPaymentCommand struct {
 	PayerEmail        string
 	IdempotencyKey    string
 	ExpiresAt         time.Time
+}
+
+type GetPaymentStatusCommand struct {
+	ProviderOrderID string
+}
+
+type MercadoPagoOrderWebhookInput struct {
+	DataID          string
+	Type            string
+	SignatureHeader string
+	RequestID       string
+	WebhookSecret   string
+	RawQuery        string
+	RawBody         []byte
+	ReceivedAt      time.Time
+	Now             time.Time
+}
+
+type VerifiedMercadoPagoWebhook struct {
+	ProviderOrderID    string
+	RequestID          string
+	SignatureTimestamp time.Time
+	RawQuery           string
+	RawBody            []byte
+	ReceivedAt         time.Time
 }
 
 type PixPayment struct {
@@ -247,6 +326,14 @@ const (
 	PaymentStatusExpired         PaymentStatus = "expired"
 )
 
+type PaymentEventProcessingStatus string
+
+const (
+	PaymentEventProcessingStatusProcessed PaymentEventProcessingStatus = "processed"
+	PaymentEventProcessingStatusRejected  PaymentEventProcessingStatus = "rejected"
+	PaymentEventProcessingStatusFailed    PaymentEventProcessingStatus = "failed"
+)
+
 func ListBoothItems(ctx context.Context, repository Repository, input ListBoothItemsInput) ([]BoothItem, error) {
 	query, err := validateListBoothItemsInput(input)
 	if err != nil {
@@ -270,6 +357,106 @@ func CreateCashCheckout(ctx context.Context, repository Repository, input Create
 	sale, err := repository.CreateCashCheckout(ctx, command)
 	if err != nil {
 		return Sale{}, fmt.Errorf("create cash checkout band_id=%q: %w", command.Account.BandID, err)
+	}
+
+	return sale, nil
+}
+
+func HandleMercadoPagoOrderWebhook(ctx context.Context, repository Repository, paymentProvider PaymentProvider, input MercadoPagoOrderWebhookInput) (Sale, error) {
+	verifiedWebhook, err := VerifyMercadoPagoOrderWebhookSignature(input)
+	if err != nil {
+		recordErr := repository.RecordPaymentEvent(ctx, PaymentEventCommand{
+			Provider:          "mercadopago",
+			ProviderOrderID:   strings.TrimSpace(input.DataID),
+			WebhookRequestID:  strings.TrimSpace(input.RequestID),
+			SignatureVerified: false,
+			RawQuery:          input.RawQuery,
+			RawBody:           input.RawBody,
+			ProcessingStatus:  PaymentEventProcessingStatusRejected,
+			ProcessingError:   err.Error(),
+			ReceivedAt:        input.ReceivedAt.UTC(),
+			ProcessedAt:       input.Now.UTC(),
+		})
+		if recordErr != nil {
+			return Sale{}, fmt.Errorf("%w: %v; record payment event failed: %v", ErrWebhookSignature, err, recordErr)
+		}
+
+		return Sale{}, fmt.Errorf("%w: %v", ErrWebhookSignature, err)
+	}
+
+	providerResult, err := paymentProvider.GetPaymentStatus(ctx, GetPaymentStatusCommand{ProviderOrderID: verifiedWebhook.ProviderOrderID})
+	if err != nil {
+		recordErr := repository.RecordPaymentEvent(ctx, failedPaymentEventCommand(verifiedWebhook, err, input.Now.UTC()))
+		if recordErr != nil {
+			return Sale{}, fmt.Errorf("%w: get payment status provider_order_id=%q: %v; record payment event failed: %v", ErrPaymentProvider, verifiedWebhook.ProviderOrderID, err, recordErr)
+		}
+
+		return Sale{}, fmt.Errorf("%w: get payment status provider_order_id=%q: %v", ErrPaymentProvider, verifiedWebhook.ProviderOrderID, err)
+	}
+
+	sale, err := repository.ApplyPixPaymentStatus(ctx, ApplyPixPaymentStatusCommand{
+		ProviderResult: providerResult,
+		RequestID:      verifiedWebhook.RequestID,
+		IdempotencyKey: verifiedWebhook.RequestID,
+		UpdatedAt:      input.Now.UTC(),
+	})
+	if err != nil {
+		recordErr := repository.RecordPaymentEvent(ctx, failedPaymentEventCommand(verifiedWebhook, err, input.Now.UTC()))
+		if recordErr != nil {
+			return Sale{}, fmt.Errorf("apply pix payment status provider_order_id=%q: %w; record payment event failed: %v", verifiedWebhook.ProviderOrderID, err, recordErr)
+		}
+
+		return Sale{}, fmt.Errorf("apply pix payment status provider_order_id=%q: %w", verifiedWebhook.ProviderOrderID, err)
+	}
+
+	if err := repository.RecordPaymentEvent(ctx, PaymentEventCommand{
+		Provider:           "mercadopago",
+		ProviderOrderID:    verifiedWebhook.ProviderOrderID,
+		BandID:             sale.BandID,
+		SaleID:             sale.ID,
+		PaymentID:          sale.Payment.ID,
+		WebhookRequestID:   verifiedWebhook.RequestID,
+		SignatureTimestamp: verifiedWebhook.SignatureTimestamp,
+		SignatureVerified:  true,
+		RawQuery:           verifiedWebhook.RawQuery,
+		RawBody:            verifiedWebhook.RawBody,
+		ProcessingStatus:   PaymentEventProcessingStatusProcessed,
+		ReceivedAt:         verifiedWebhook.ReceivedAt,
+		ProcessedAt:        input.Now.UTC(),
+	}); err != nil {
+		return Sale{}, fmt.Errorf("record processed payment event provider_order_id=%q: %w", verifiedWebhook.ProviderOrderID, err)
+	}
+
+	return sale, nil
+}
+
+func VerifyPixPayment(ctx context.Context, repository Repository, paymentProvider PaymentProvider, input VerifyPixPaymentInput) (Sale, error) {
+	command, err := validateVerifyPixPaymentInput(input)
+	if err != nil {
+		return Sale{}, err
+	}
+
+	providerOrderID, err := repository.GetPixPaymentProviderOrderID(ctx, GetPixPaymentProviderOrderIDQuery{
+		Account:   command.Account,
+		PaymentID: command.PaymentID,
+	})
+	if err != nil {
+		return Sale{}, fmt.Errorf("get pix payment provider order id band_id=%q payment_id=%q: %w", command.Account.BandID, command.PaymentID, err)
+	}
+
+	providerResult, err := paymentProvider.GetPaymentStatus(ctx, GetPaymentStatusCommand{ProviderOrderID: providerOrderID})
+	if err != nil {
+		return Sale{}, fmt.Errorf("%w: get payment status provider_order_id=%q: %v", ErrPaymentProvider, providerOrderID, err)
+	}
+
+	sale, err := repository.ApplyPixPaymentStatus(ctx, ApplyPixPaymentStatusCommand{
+		ProviderResult: providerResult,
+		RequestID:      command.RequestID,
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.UpdatedAt,
+	})
+	if err != nil {
+		return Sale{}, fmt.Errorf("apply pix payment status band_id=%q payment_id=%q provider_order_id=%q: %w", command.Account.BandID, command.PaymentID, providerOrderID, err)
 	}
 
 	return sale, nil
@@ -442,6 +629,39 @@ func validateCreatePixCheckoutInput(input CreatePixCheckoutInput) (CreatePixChec
 	return command, requestHash, nil
 }
 
+func validateVerifyPixPaymentInput(input VerifyPixPaymentInput) (VerifyPixPaymentCommand, error) {
+	if err := validateWriteAccount(input.Account); err != nil {
+		return VerifyPixPaymentCommand{}, err
+	}
+
+	paymentID, err := validateID("payment id", input.PaymentID)
+	if err != nil {
+		return VerifyPixPaymentCommand{}, err
+	}
+
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	if idempotencyKey == "" {
+		return VerifyPixPaymentCommand{}, fmt.Errorf("idempotency key is required")
+	}
+
+	requestID := strings.TrimSpace(input.RequestID)
+	if requestID == "" {
+		return VerifyPixPaymentCommand{}, fmt.Errorf("request id is required")
+	}
+
+	if input.UpdatedAt.IsZero() {
+		return VerifyPixPaymentCommand{}, fmt.Errorf("updated at timestamp is required")
+	}
+
+	return VerifyPixPaymentCommand{
+		Account:        input.Account,
+		PaymentID:      paymentID,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		UpdatedAt:      input.UpdatedAt.UTC(),
+	}, nil
+}
+
 func HashPixCheckoutRequest(command CreatePixCheckoutCommand) (string, error) {
 	body, err := json.Marshal(struct {
 		BandID     string        `json:"bandId"`
@@ -460,6 +680,120 @@ func HashPixCheckoutRequest(command CreatePixCheckoutCommand) (string, error) {
 
 	hash := sha256.Sum256(body)
 	return hex.EncodeToString(hash[:]), nil
+}
+
+func VerifyMercadoPagoOrderWebhookSignature(input MercadoPagoOrderWebhookInput) (VerifiedMercadoPagoWebhook, error) {
+	if strings.TrimSpace(input.Type) != "order" {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("webhook type must be order")
+	}
+
+	providerOrderID := strings.TrimSpace(input.DataID)
+	if providerOrderID == "" {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("webhook data.id is required")
+	}
+	signatureOrderID := normalizeWebhookDataID(providerOrderID)
+
+	requestID := strings.TrimSpace(input.RequestID)
+	if requestID == "" {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("webhook x-request-id header is required")
+	}
+
+	webhookSecret := strings.TrimSpace(input.WebhookSecret)
+	if webhookSecret == "" {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("mercadopago webhook secret is required")
+	}
+
+	signatureTimestamp, signatureValue, err := parseMercadoPagoSignatureHeader(input.SignatureHeader)
+	if err != nil {
+		return VerifiedMercadoPagoWebhook{}, err
+	}
+
+	now := input.Now.UTC()
+	if now.IsZero() {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("current timestamp is required")
+	}
+
+	signatureTime := time.UnixMilli(signatureTimestamp).UTC()
+	maxAge := 5 * time.Minute
+	if signatureTime.Before(now.Add(-maxAge)) || signatureTime.After(now.Add(maxAge)) {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("webhook signature timestamp is outside tolerance")
+	}
+
+	manifest := mercadoPagoSignatureManifest(signatureOrderID, requestID, strconv.FormatInt(signatureTimestamp, 10))
+	mac := hmac.New(sha256.New, []byte(webhookSecret))
+	if _, err := mac.Write([]byte(manifest)); err != nil {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("compute webhook signature manifest: %w", err)
+	}
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(expectedSignature), []byte(signatureValue)) != 1 {
+		return VerifiedMercadoPagoWebhook{}, fmt.Errorf("webhook signature mismatch")
+	}
+
+	return VerifiedMercadoPagoWebhook{
+		ProviderOrderID:    providerOrderID,
+		RequestID:          requestID,
+		SignatureTimestamp: signatureTime,
+		RawQuery:           input.RawQuery,
+		RawBody:            input.RawBody,
+		ReceivedAt:         input.ReceivedAt.UTC(),
+	}, nil
+}
+
+func parseMercadoPagoSignatureHeader(value string) (int64, string, error) {
+	trimmedValue := strings.TrimSpace(value)
+	if trimmedValue == "" {
+		return 0, "", fmt.Errorf("webhook x-signature header is required")
+	}
+
+	parts := strings.Split(trimmedValue, ",")
+	values := make(map[string]string, len(parts))
+	for _, part := range parts {
+		keyValue := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(keyValue) != 2 {
+			return 0, "", fmt.Errorf("webhook x-signature header contains invalid segment %q", part)
+		}
+		values[strings.TrimSpace(keyValue[0])] = strings.TrimSpace(keyValue[1])
+	}
+
+	rawTimestamp := values["ts"]
+	if rawTimestamp == "" {
+		return 0, "", fmt.Errorf("webhook x-signature ts value is required")
+	}
+	signatureTimestamp, err := strconv.ParseInt(rawTimestamp, 10, 64)
+	if err != nil {
+		return 0, "", fmt.Errorf("webhook x-signature ts value %q is invalid: %w", rawTimestamp, err)
+	}
+
+	signatureValue := values["v1"]
+	if signatureValue == "" {
+		return 0, "", fmt.Errorf("webhook x-signature v1 value is required")
+	}
+
+	return signatureTimestamp, signatureValue, nil
+}
+
+func mercadoPagoSignatureManifest(providerOrderID string, requestID string, signatureTimestamp string) string {
+	return "id:" + providerOrderID + ";request-id:" + requestID + ";ts:" + signatureTimestamp + ";"
+}
+
+func normalizeWebhookDataID(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func failedPaymentEventCommand(webhook VerifiedMercadoPagoWebhook, processingErr error, processedAt time.Time) PaymentEventCommand {
+	return PaymentEventCommand{
+		Provider:           "mercadopago",
+		ProviderOrderID:    webhook.ProviderOrderID,
+		WebhookRequestID:   webhook.RequestID,
+		SignatureTimestamp: webhook.SignatureTimestamp,
+		SignatureVerified:  true,
+		RawQuery:           webhook.RawQuery,
+		RawBody:            webhook.RawBody,
+		ProcessingStatus:   PaymentEventProcessingStatusFailed,
+		ProcessingError:    processingErr.Error(),
+		ReceivedAt:         webhook.ReceivedAt,
+		ProcessedAt:        processedAt.UTC(),
+	}
 }
 
 func validateReadAccount(account AccountContext) error {

@@ -113,3 +113,59 @@ func TestCreatePixPaymentSendsOrderRequestAndParsesQRCode(t *testing.T) {
 		t.Fatalf("expected action required status, got %q", payment.LocalStatus)
 	}
 }
+
+func TestGetPaymentStatusFetchesOrderAndMapsStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			t.Fatalf("expected GET method, got %s", request.Method)
+		}
+		if request.URL.Path != "/v1/orders/order_1" {
+			t.Fatalf("expected order path, got %s", request.URL.Path)
+		}
+		if request.Header.Get("Authorization") != "Bearer access-token" {
+			t.Fatalf("expected authorization header, got %q", request.Header.Get("Authorization"))
+		}
+
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusOK)
+		response.Write([]byte(`{
+			"id": "order_1",
+			"external_reference": "sale_1",
+			"status": "processed",
+			"status_detail": "accredited",
+			"transactions": {
+				"payments": [
+					{
+						"id": "payment_1",
+						"reference_id": "reference_1",
+						"status": "processed",
+						"status_detail": "accredited"
+					}
+				]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("access-token", server.URL, server.Client(), slog.Default())
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	payment, err := client.GetPaymentStatus(context.Background(), applicationmerchbooth.GetPaymentStatusCommand{ProviderOrderID: "order_1"})
+	if err != nil {
+		t.Fatalf("get payment status: %v", err)
+	}
+
+	if payment.LocalStatus != applicationmerchbooth.PaymentStatusConfirmed {
+		t.Fatalf("expected confirmed status, got %q", payment.LocalStatus)
+	}
+	if payment.ProviderPaymentID != "payment_1" {
+		t.Fatalf("expected provider payment id, got %q", payment.ProviderPaymentID)
+	}
+	if payment.ExternalReference != "sale_1" {
+		t.Fatalf("expected external reference, got %q", payment.ExternalReference)
+	}
+}

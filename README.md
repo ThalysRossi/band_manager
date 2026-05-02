@@ -38,6 +38,7 @@ DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?ss
 REDIS_URL=redis://localhost:6379/0 \
 SUPABASE_JWT_SECRET=replace-me \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
+MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 pnpm dev:api
 ```
 

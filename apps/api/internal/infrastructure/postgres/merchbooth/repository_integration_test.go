@@ -271,6 +271,75 @@ func TestRepositoryPixReservationReducesAvailableCheckoutStock(t *testing.T) {
 	}
 }
 
+func TestRepositoryApplyPixPaymentStatusFinalizesConfirmedSale(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Pix Confirmed", 4)
+	repository := NewRepository(pool)
+	command := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 2)
+	completePixPaymentCreation(t, ctx, repository, account, command, "order_confirmed")
+
+	sale, err := repository.ApplyPixPaymentStatus(ctx, applicationmerchbooth.ApplyPixPaymentStatusCommand{
+		ProviderResult: confirmedPixPayment("order_confirmed"),
+		RequestID:      "request_webhook_confirmed",
+		IdempotencyKey: "request_webhook_confirmed",
+		UpdatedAt:      command.CreatedAt.Add(2 * time.Second),
+	})
+	if err != nil {
+		t.Fatalf("apply confirmed pix payment: %v", err)
+	}
+
+	if sale.Status != applicationmerchbooth.SaleStatusFinalized {
+		t.Fatalf("expected finalized sale, got %q", sale.Status)
+	}
+
+	assertTableCount(t, pool, "inventory_reservations", "band_id = $1 AND sale_id = $2 AND status = $3", []interface{}{account.BandID, command.SaleID, "consumed"}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = $2", []interface{}{inventoryProduct.Variants[0].ID, 2}, 1)
+	assertTableCount(t, pool, "transactions", "sale_id = $1", []interface{}{command.SaleID}, 1)
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_id = $3", []interface{}{account.BandID, "merch_booth.pix_payment_confirmed", command.PaymentID}, 1)
+
+	_, err = repository.ApplyPixPaymentStatus(ctx, applicationmerchbooth.ApplyPixPaymentStatusCommand{
+		ProviderResult: confirmedPixPayment("order_confirmed"),
+		RequestID:      "request_webhook_confirmed_duplicate",
+		IdempotencyKey: "request_webhook_confirmed_duplicate",
+		UpdatedAt:      command.CreatedAt.Add(3 * time.Second),
+	})
+	if err != nil {
+		t.Fatalf("apply duplicate confirmed pix payment: %v", err)
+	}
+
+	assertTableCount(t, pool, "transactions", "sale_id = $1", []interface{}{command.SaleID}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = $2", []interface{}{inventoryProduct.Variants[0].ID, 2}, 1)
+}
+
+func TestRepositoryApplyPixPaymentStatusReleasesExpiredSale(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Pix Expired", 3)
+	repository := NewRepository(pool)
+	command := validPixCheckoutCommand(account, inventoryProduct.Variants[0].ID, 1)
+	completePixPaymentCreation(t, ctx, repository, account, command, "order_expired")
+
+	_, err := repository.ApplyPixPaymentStatus(ctx, applicationmerchbooth.ApplyPixPaymentStatusCommand{
+		ProviderResult: expiredPixPayment("order_expired"),
+		RequestID:      "request_webhook_expired",
+		IdempotencyKey: "request_webhook_expired",
+		UpdatedAt:      command.CreatedAt.Add(2 * time.Second),
+	})
+	if err != nil {
+		t.Fatalf("apply expired pix payment: %v", err)
+	}
+
+	assertTableCount(t, pool, "inventory_reservations", "band_id = $1 AND sale_id = $2 AND status = $3", []interface{}{account.BandID, command.SaleID, "released"}, 1)
+	assertTableCount(t, pool, "sales", "id = $1 AND status = $2", []interface{}{command.SaleID, "canceled"}, 1)
+	assertTableCount(t, pool, "transactions", "sale_id = $1", []interface{}{command.SaleID}, 0)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = $2", []interface{}{inventoryProduct.Variants[0].ID, 3}, 1)
+}
+
 func TestRepositoryListBoothItemsIncludesSoldOutVariants(t *testing.T) {
 	t.Parallel()
 
@@ -535,6 +604,77 @@ func validPixCheckoutCommand(account applicationmerchbooth.AccountContext, varia
 		RequestID:      "request_pix_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		CreatedAt:      testTimestamp().Add(3 * time.Minute),
 		ExpiresAt:      testTimestamp().Add(33 * time.Minute),
+	}
+}
+
+func completePixPaymentCreation(t *testing.T, ctx context.Context, repository Repository, account applicationmerchbooth.AccountContext, command applicationmerchbooth.CreatePixCheckoutCommand, providerOrderID string) {
+	t.Helper()
+
+	reservedSale, _, err := repository.ReservePixCheckout(ctx, command)
+	if err != nil {
+		t.Fatalf("reserve pix checkout: %v", err)
+	}
+
+	requestHash, err := applicationmerchbooth.HashPixCheckoutRequest(command)
+	if err != nil {
+		t.Fatalf("hash pix checkout request: %v", err)
+	}
+
+	_, err = repository.CompletePixCheckoutPayment(ctx, applicationmerchbooth.CompletePixCheckoutPaymentCommand{
+		Account:     account,
+		SaleID:      command.SaleID,
+		PaymentID:   command.PaymentID,
+		RequestID:   command.RequestID,
+		RequestHash: requestHash,
+		ProviderResult: applicationmerchbooth.PixPayment{
+			Provider:             "mercadopago",
+			ProviderOrderID:      providerOrderID,
+			ProviderPaymentID:    "payment_" + providerOrderID,
+			ProviderReferenceID:  "reference_" + providerOrderID,
+			ExternalReference:    command.ExternalReference,
+			ProviderStatus:       "action_required",
+			ProviderStatusDetail: "waiting_transfer",
+			LocalStatus:          applicationmerchbooth.PaymentStatusActionRequired,
+			Amount:               reservedSale.Total,
+			ExpiresAt:            command.ExpiresAt,
+			QRCode:               "pix-copy-paste",
+			QRCodeBase64:         "base64",
+			TicketURL:            "https://example.test/ticket",
+			RawProviderResponse:  []byte(`{"id":"` + providerOrderID + `"}`),
+		},
+		IdempotencyKey: command.IdempotencyKey,
+		UpdatedAt:      command.CreatedAt.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatalf("complete pix checkout payment: %v", err)
+	}
+}
+
+func confirmedPixPayment(providerOrderID string) applicationmerchbooth.PixPayment {
+	return applicationmerchbooth.PixPayment{
+		Provider:             "mercadopago",
+		ProviderOrderID:      providerOrderID,
+		ProviderPaymentID:    "payment_" + providerOrderID,
+		ProviderReferenceID:  "reference_" + providerOrderID,
+		ExternalReference:    "",
+		ProviderStatus:       "processed",
+		ProviderStatusDetail: "accredited",
+		LocalStatus:          applicationmerchbooth.PaymentStatusConfirmed,
+		RawProviderResponse:  []byte(`{"id":"` + providerOrderID + `","status":"processed"}`),
+	}
+}
+
+func expiredPixPayment(providerOrderID string) applicationmerchbooth.PixPayment {
+	return applicationmerchbooth.PixPayment{
+		Provider:             "mercadopago",
+		ProviderOrderID:      providerOrderID,
+		ProviderPaymentID:    "payment_" + providerOrderID,
+		ProviderReferenceID:  "reference_" + providerOrderID,
+		ExternalReference:    "",
+		ProviderStatus:       "expired",
+		ProviderStatusDetail: "expired",
+		LocalStatus:          applicationmerchbooth.PaymentStatusExpired,
+		RawProviderResponse:  []byte(`{"id":"` + providerOrderID + `","status":"expired"}`),
 	}
 }
 

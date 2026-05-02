@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,15 @@ import (
 
 const cashCheckoutOperation = "merch_booth_cash_checkout"
 const pixCheckoutOperation = "merch_booth_pix_checkout"
+
+type pixPaymentStateRow struct {
+	PaymentID       string
+	SaleID          string
+	BandID          string
+	CreatedByUserID string
+	SaleStatus      applicationmerchbooth.SaleStatus
+	PaymentStatus   applicationmerchbooth.PaymentStatus
+}
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -597,6 +607,323 @@ func (repository Repository) FailPixCheckoutPaymentCreation(ctx context.Context,
 	}
 
 	return nil
+}
+
+func (repository Repository) GetPixPaymentProviderOrderID(ctx context.Context, query applicationmerchbooth.GetPixPaymentProviderOrderIDQuery) (string, error) {
+	var providerOrderID string
+	err := repository.pool.QueryRow(ctx, `
+		SELECT provider_order_id
+		FROM payments
+		WHERE id = $1
+			AND band_id = $2
+			AND method = $3
+			AND provider = $4
+			AND provider_order_id IS NOT NULL
+	`, query.PaymentID, query.Account.BandID, applicationmerchbooth.PaymentMethodPix, "mercadopago").Scan(&providerOrderID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("%w: band_id=%q payment_id=%q", applicationmerchbooth.ErrPaymentNotFound, query.Account.BandID, query.PaymentID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("query pix payment provider order id band_id=%q payment_id=%q: %w", query.Account.BandID, query.PaymentID, err)
+	}
+
+	return providerOrderID, nil
+}
+
+func (repository Repository) ApplyPixPaymentStatus(ctx context.Context, command applicationmerchbooth.ApplyPixPaymentStatusCommand) (applicationmerchbooth.Sale, error) {
+	if strings.TrimSpace(command.ProviderResult.ProviderOrderID) == "" {
+		return applicationmerchbooth.Sale{}, fmt.Errorf("provider order id is required")
+	}
+	if len(command.ProviderResult.RawProviderResponse) == 0 {
+		return applicationmerchbooth.Sale{}, fmt.Errorf("provider raw response is required provider_order_id=%q", command.ProviderResult.ProviderOrderID)
+	}
+	if strings.TrimSpace(command.ProviderResult.Provider) != "mercadopago" {
+		return applicationmerchbooth.Sale{}, fmt.Errorf("unsupported payment provider %q provider_order_id=%q", command.ProviderResult.Provider, command.ProviderResult.ProviderOrderID)
+	}
+	if err := validatePaymentStatus(command.ProviderResult.LocalStatus, command.ProviderResult.ProviderOrderID); err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return applicationmerchbooth.Sale{}, fmt.Errorf("begin pix payment status transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	state, err := lockPixPaymentState(ctx, tx, command.ProviderResult.ProviderOrderID)
+	if err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+
+	if err := updatePixPaymentProviderStatus(ctx, tx, command, state); err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+
+	if state.SaleStatus == applicationmerchbooth.SaleStatusPendingPayment {
+		switch command.ProviderResult.LocalStatus {
+		case applicationmerchbooth.PaymentStatusConfirmed:
+			if err := finalizeConfirmedPixSale(ctx, tx, command, state); err != nil {
+				return applicationmerchbooth.Sale{}, err
+			}
+		case applicationmerchbooth.PaymentStatusFailed, applicationmerchbooth.PaymentStatusCanceled, applicationmerchbooth.PaymentStatusExpired:
+			if err := releaseUnpaidPixSale(ctx, tx, command, state); err != nil {
+				return applicationmerchbooth.Sale{}, err
+			}
+		case applicationmerchbooth.PaymentStatusProviderPending, applicationmerchbooth.PaymentStatusActionRequired, applicationmerchbooth.PaymentStatusProcessing:
+		default:
+			return applicationmerchbooth.Sale{}, fmt.Errorf("unsupported local payment status %q provider_order_id=%q", command.ProviderResult.LocalStatus, command.ProviderResult.ProviderOrderID)
+		}
+	}
+
+	auditAction, err := auditActionForPixPaymentStatus(command.ProviderResult.LocalStatus)
+	if err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+	if err := insertAuditLog(ctx, tx, state.CreatedByUserID, state.BandID, auditAction, "payment", state.PaymentID, command.RequestID, command.IdempotencyKey, command.UpdatedAt); err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+
+	sale, err := getSaleByID(ctx, tx, state.BandID, state.SaleID)
+	if err != nil {
+		return applicationmerchbooth.Sale{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return applicationmerchbooth.Sale{}, fmt.Errorf("commit pix payment status transaction band_id=%q sale_id=%q provider_order_id=%q: %w", state.BandID, state.SaleID, command.ProviderResult.ProviderOrderID, err)
+	}
+
+	return sale, nil
+}
+
+func (repository Repository) RecordPaymentEvent(ctx context.Context, command applicationmerchbooth.PaymentEventCommand) error {
+	_, err := repository.pool.Exec(ctx, `
+		INSERT INTO payment_events (
+			id, provider, provider_order_id, band_id, sale_id, payment_id,
+			webhook_request_id, signature_timestamp, signature_verified,
+			raw_query, raw_body, processing_status, processing_error,
+			received_at, processed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (provider, webhook_request_id) WHERE webhook_request_id IS NOT NULL DO NOTHING
+	`, uuid.NewString(), command.Provider, nullableString(command.ProviderOrderID), nullableString(command.BandID), nullableString(command.SaleID), nullableString(command.PaymentID), nullableString(command.WebhookRequestID), nullableTime(command.SignatureTimestamp), command.SignatureVerified, command.RawQuery, string(command.RawBody), command.ProcessingStatus, nullableString(command.ProcessingError), command.ReceivedAt, command.ProcessedAt)
+	if err != nil {
+		return fmt.Errorf("insert payment event provider=%q provider_order_id=%q webhook_request_id=%q: %w", command.Provider, command.ProviderOrderID, command.WebhookRequestID, err)
+	}
+
+	return nil
+}
+
+func lockPixPaymentState(ctx context.Context, tx pgx.Tx, providerOrderID string) (pixPaymentStateRow, error) {
+	var state pixPaymentStateRow
+	var saleStatus string
+	var paymentStatus string
+	err := tx.QueryRow(ctx, `
+		SELECT payments.id,
+			payments.sale_id,
+			payments.band_id,
+			sales.created_by_user_id,
+			sales.status,
+			payments.status
+		FROM payments
+		INNER JOIN sales ON sales.id = payments.sale_id AND sales.band_id = payments.band_id
+		WHERE payments.provider = $1
+			AND payments.provider_order_id = $2
+			AND payments.method = $3
+		FOR UPDATE OF payments, sales
+	`, "mercadopago", providerOrderID, applicationmerchbooth.PaymentMethodPix).Scan(
+		&state.PaymentID,
+		&state.SaleID,
+		&state.BandID,
+		&state.CreatedByUserID,
+		&saleStatus,
+		&paymentStatus,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pixPaymentStateRow{}, fmt.Errorf("%w: provider_order_id=%q", applicationmerchbooth.ErrPaymentNotFound, providerOrderID)
+	}
+	if err != nil {
+		return pixPaymentStateRow{}, fmt.Errorf("lock pix payment state provider_order_id=%q: %w", providerOrderID, err)
+	}
+
+	state.SaleStatus = applicationmerchbooth.SaleStatus(saleStatus)
+	state.PaymentStatus = applicationmerchbooth.PaymentStatus(paymentStatus)
+	return state, nil
+}
+
+func updatePixPaymentProviderStatus(ctx context.Context, tx pgx.Tx, command applicationmerchbooth.ApplyPixPaymentStatusCommand, state pixPaymentStateRow) error {
+	confirmedAt := sql.NullTime{}
+	if command.ProviderResult.LocalStatus == applicationmerchbooth.PaymentStatusConfirmed {
+		confirmedAt = sql.NullTime{Time: command.UpdatedAt, Valid: true}
+	}
+
+	_, err := tx.Exec(ctx, `
+		UPDATE payments
+		SET status = $1,
+			provider_payment_id = COALESCE(NULLIF($2, ''), provider_payment_id),
+			provider_reference_id = COALESCE(NULLIF($3, ''), provider_reference_id),
+			external_reference = COALESCE(NULLIF($4, ''), external_reference),
+			provider_status = $5,
+			provider_status_detail = $6,
+			confirmed_at = COALESCE($7, confirmed_at),
+			pix_qr_code = COALESCE(NULLIF($8, ''), pix_qr_code),
+			pix_qr_code_base64 = COALESCE(NULLIF($9, ''), pix_qr_code_base64),
+			pix_ticket_url = COALESCE(NULLIF($10, ''), pix_ticket_url),
+			raw_provider_response = $11,
+			updated_at = $12
+		WHERE id = $13 AND sale_id = $14 AND band_id = $15
+	`, command.ProviderResult.LocalStatus, command.ProviderResult.ProviderPaymentID, command.ProviderResult.ProviderReferenceID, command.ProviderResult.ExternalReference, command.ProviderResult.ProviderStatus, command.ProviderResult.ProviderStatusDetail, confirmedAt, command.ProviderResult.QRCode, command.ProviderResult.QRCodeBase64, command.ProviderResult.TicketURL, command.ProviderResult.RawProviderResponse, command.UpdatedAt, state.PaymentID, state.SaleID, state.BandID)
+	if err != nil {
+		return fmt.Errorf("update pix payment provider status band_id=%q sale_id=%q payment_id=%q provider_order_id=%q: %w", state.BandID, state.SaleID, state.PaymentID, command.ProviderResult.ProviderOrderID, err)
+	}
+
+	return nil
+}
+
+func finalizeConfirmedPixSale(ctx context.Context, tx pgx.Tx, command applicationmerchbooth.ApplyPixPaymentStatusCommand, state pixPaymentStateRow) error {
+	items, err := getSaleItems(ctx, tx, state.BandID, state.SaleID)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		var currentQuantity int
+		err := tx.QueryRow(ctx, `
+			SELECT quantity
+			FROM merch_variants
+			WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+			FOR UPDATE
+		`, item.VariantID, state.BandID).Scan(&currentQuantity)
+		if err != nil {
+			return fmt.Errorf("lock pix finalized variant band_id=%q variant_id=%q sale_id=%q: %w", state.BandID, item.VariantID, state.SaleID, err)
+		}
+
+		quantityAfter := currentQuantity - item.Quantity
+		if quantityAfter < 0 {
+			return fmt.Errorf("%w: band_id=%q variant_id=%q requested=%d available=%d", applicationmerchbooth.ErrInsufficientStock, state.BandID, item.VariantID, item.Quantity, currentQuantity)
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE merch_variants
+			SET quantity = $1, updated_at = $2
+			WHERE id = $3 AND band_id = $4 AND deleted_at IS NULL
+		`, quantityAfter, command.UpdatedAt, item.VariantID, state.BandID)
+		if err != nil {
+			return fmt.Errorf("decrement pix finalized inventory band_id=%q variant_id=%q sale_id=%q: %w", state.BandID, item.VariantID, state.SaleID, err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO inventory_movements (
+				id, band_id, product_id, variant_id, movement_type,
+				quantity_delta, quantity_after, reason, actor_user_id, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, uuid.NewString(), state.BandID, item.ProductID, item.VariantID, "sale", -item.Quantity, quantityAfter, "merch_booth.pix_checkout", state.CreatedByUserID, command.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert pix finalized inventory movement band_id=%q variant_id=%q sale_id=%q: %w", state.BandID, item.VariantID, state.SaleID, err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO transactions (
+				id, sale_id, sale_item_id, band_id, transaction_type,
+				amount_minor, currency, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, uuid.NewString(), state.SaleID, item.ID, state.BandID, "sale_item", item.LineTotal.Amount, item.LineTotal.Currency, command.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("insert pix finalized transaction band_id=%q sale_item_id=%q sale_id=%q: %w", state.BandID, item.ID, state.SaleID, err)
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE inventory_reservations
+		SET status = $1, consumed_at = $2, updated_at = $2
+		WHERE band_id = $3 AND sale_id = $4 AND status = $5
+	`, "consumed", command.UpdatedAt, state.BandID, state.SaleID, "reserved")
+	if err != nil {
+		return fmt.Errorf("consume pix reservations band_id=%q sale_id=%q: %w", state.BandID, state.SaleID, err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE sales
+		SET status = $1, finalized_at = $2, updated_at = $2
+		WHERE id = $3 AND band_id = $4
+	`, applicationmerchbooth.SaleStatusFinalized, command.UpdatedAt, state.SaleID, state.BandID)
+	if err != nil {
+		return fmt.Errorf("finalize pix sale band_id=%q sale_id=%q: %w", state.BandID, state.SaleID, err)
+	}
+
+	return nil
+}
+
+func releaseUnpaidPixSale(ctx context.Context, tx pgx.Tx, command applicationmerchbooth.ApplyPixPaymentStatusCommand, state pixPaymentStateRow) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE inventory_reservations
+		SET status = $1, updated_at = $2
+		WHERE band_id = $3 AND sale_id = $4 AND status = $5
+	`, "released", command.UpdatedAt, state.BandID, state.SaleID, "reserved")
+	if err != nil {
+		return fmt.Errorf("release unpaid pix reservations band_id=%q sale_id=%q status=%q: %w", state.BandID, state.SaleID, command.ProviderResult.LocalStatus, err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE sales
+		SET status = $1, updated_at = $2
+		WHERE id = $3 AND band_id = $4
+	`, applicationmerchbooth.SaleStatusCanceled, command.UpdatedAt, state.SaleID, state.BandID)
+	if err != nil {
+		return fmt.Errorf("mark unpaid pix sale canceled band_id=%q sale_id=%q status=%q: %w", state.BandID, state.SaleID, command.ProviderResult.LocalStatus, err)
+	}
+
+	return nil
+}
+
+func validatePaymentStatus(status applicationmerchbooth.PaymentStatus, providerOrderID string) error {
+	switch status {
+	case applicationmerchbooth.PaymentStatusConfirmed,
+		applicationmerchbooth.PaymentStatusFailed,
+		applicationmerchbooth.PaymentStatusCanceled,
+		applicationmerchbooth.PaymentStatusExpired,
+		applicationmerchbooth.PaymentStatusProviderPending,
+		applicationmerchbooth.PaymentStatusActionRequired,
+		applicationmerchbooth.PaymentStatusProcessing:
+		return nil
+	default:
+		return fmt.Errorf("unsupported local payment status %q provider_order_id=%q", status, providerOrderID)
+	}
+}
+
+func auditActionForPixPaymentStatus(status applicationmerchbooth.PaymentStatus) (string, error) {
+	switch status {
+	case applicationmerchbooth.PaymentStatusConfirmed:
+		return "merch_booth.pix_payment_confirmed", nil
+	case applicationmerchbooth.PaymentStatusFailed:
+		return "merch_booth.pix_payment_failed", nil
+	case applicationmerchbooth.PaymentStatusCanceled:
+		return "merch_booth.pix_payment_canceled", nil
+	case applicationmerchbooth.PaymentStatusExpired:
+		return "merch_booth.pix_payment_expired", nil
+	case applicationmerchbooth.PaymentStatusProviderPending, applicationmerchbooth.PaymentStatusActionRequired, applicationmerchbooth.PaymentStatusProcessing:
+		return "merch_booth.pix_payment_status_updated", nil
+	default:
+		return "", fmt.Errorf("unsupported local payment status %q", status)
+	}
+}
+
+func nullableString(value string) interface{} {
+	trimmedValue := strings.TrimSpace(value)
+	if trimmedValue == "" {
+		return nil
+	}
+
+	return trimmedValue
+}
+
+func nullableTime(value time.Time) interface{} {
+	if value.IsZero() {
+		return nil
+	}
+
+	return value
 }
 
 func lockCheckoutVariants(ctx context.Context, tx pgx.Tx, command applicationmerchbooth.CreateCashCheckoutCommand) ([]applicationmerchbooth.BoothItem, error) {

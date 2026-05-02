@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -53,10 +54,11 @@ type orderPayer struct {
 }
 
 type orderResponse struct {
-	ID           string                   `json:"id"`
-	Status       string                   `json:"status"`
-	StatusDetail string                   `json:"status_detail"`
-	Transactions orderResponseTransaction `json:"transactions"`
+	ID                string                   `json:"id"`
+	ExternalReference string                   `json:"external_reference"`
+	Status            string                   `json:"status"`
+	StatusDetail      string                   `json:"status_detail"`
+	Transactions      orderResponseTransaction `json:"transactions"`
 }
 
 type orderResponseTransaction struct {
@@ -174,6 +176,25 @@ func (client Client) CreatePixPayment(ctx context.Context, command applicationme
 	}, nil
 }
 
+func (client Client) GetPaymentStatus(ctx context.Context, command applicationmerchbooth.GetPaymentStatusCommand) (applicationmerchbooth.PixPayment, error) {
+	providerOrderID := strings.TrimSpace(command.ProviderOrderID)
+	if providerOrderID == "" {
+		return applicationmerchbooth.PixPayment{}, fmt.Errorf("mercadopago order id is required")
+	}
+
+	responseBody, err := client.doGetOrderRequest(ctx, providerOrderID)
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, err
+	}
+
+	payment, err := pixPaymentFromOrderResponse(responseBody, providerOrderID, inventorydomain.Money{})
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, err
+	}
+
+	return payment, nil
+}
+
 func (client Client) doOrderRequest(ctx context.Context, body []byte, idempotencyKey string, externalReference string) ([]byte, error) {
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -217,6 +238,88 @@ func (client Client) doOrderRequest(ctx context.Context, body []byte, idempotenc
 	}
 
 	return nil, lastErr
+}
+
+func (client Client) doGetOrderRequest(ctx context.Context, providerOrderID string) ([]byte, error) {
+	var lastErr error
+	escapedOrderID := url.PathEscape(providerOrderID)
+	for attempt := 1; attempt <= 3; attempt++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+"/v1/orders/"+escapedOrderID, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create mercadopago get order request provider_order_id=%q: %w", providerOrderID, err)
+		}
+		request.Header.Set("Authorization", "Bearer "+client.accessToken)
+		request.Header.Set("Content-Type", "application/json")
+
+		response, err := client.httpClient.Do(request)
+		if err != nil {
+			lastErr = fmt.Errorf("mercadopago get order request failed provider_order_id=%q attempt=%d: %w", providerOrderID, attempt, err)
+			client.logger.Warn("mercadopago get order request failed", "error", err, "provider", ProviderName, "operation", "get_order", "provider_order_id", providerOrderID, "attempt", attempt)
+			continue
+		}
+
+		responseBody, readErr := io.ReadAll(response.Body)
+		closeErr := response.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("read mercadopago get order response provider_order_id=%q status_code=%d attempt=%d: %w", providerOrderID, response.StatusCode, attempt, readErr)
+			continue
+		}
+		if closeErr != nil {
+			lastErr = fmt.Errorf("close mercadopago get order response provider_order_id=%q status_code=%d attempt=%d: %w", providerOrderID, response.StatusCode, attempt, closeErr)
+			continue
+		}
+
+		if response.StatusCode >= 200 && response.StatusCode <= 299 {
+			return responseBody, nil
+		}
+
+		lastErr = fmt.Errorf("mercadopago get order response failed provider_order_id=%q status_code=%d response_body=%q", providerOrderID, response.StatusCode, string(responseBody))
+		if response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500 {
+			return nil, lastErr
+		}
+
+		client.logger.Warn("mercadopago get order response retryable failure", "provider", ProviderName, "operation", "get_order", "provider_order_id", providerOrderID, "status_code", response.StatusCode, "attempt", attempt)
+		time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+	}
+
+	return nil, lastErr
+}
+
+func pixPaymentFromOrderResponse(responseBody []byte, externalReference string, amount inventorydomain.Money) (applicationmerchbooth.PixPayment, error) {
+	var order orderResponse
+	if err := json.Unmarshal(responseBody, &order); err != nil {
+		return applicationmerchbooth.PixPayment{}, fmt.Errorf("decode mercadopago order response external_reference=%q response_body=%q: %w", externalReference, string(responseBody), err)
+	}
+
+	if order.ID == "" {
+		return applicationmerchbooth.PixPayment{}, fmt.Errorf("mercadopago order response missing order id external_reference=%q response_body=%q", externalReference, string(responseBody))
+	}
+
+	localStatus, err := localStatusForProviderStatus(order.Status)
+	if err != nil {
+		return applicationmerchbooth.PixPayment{}, fmt.Errorf("map mercadopago order status external_reference=%q order_id=%q status=%q response_body=%q: %w", externalReference, order.ID, order.Status, string(responseBody), err)
+	}
+
+	payment := paymentResponse{}
+	if len(order.Transactions.Payments) > 0 {
+		payment = order.Transactions.Payments[0]
+	}
+
+	return applicationmerchbooth.PixPayment{
+		Provider:             ProviderName,
+		ProviderOrderID:      order.ID,
+		ProviderPaymentID:    payment.ID,
+		ProviderReferenceID:  payment.ReferenceID,
+		ExternalReference:    firstNonEmpty(order.ExternalReference, externalReference),
+		ProviderStatus:       order.Status,
+		ProviderStatusDetail: firstNonEmpty(payment.StatusDetail, order.StatusDetail),
+		LocalStatus:          localStatus,
+		Amount:               amount,
+		QRCode:               findStringValue(responseBody, "qr_code"),
+		QRCodeBase64:         findStringValue(responseBody, "qr_code_base64"),
+		TicketURL:            findStringValue(responseBody, "ticket_url"),
+		RawProviderResponse:  responseBody,
+	}, nil
 }
 
 func minorUnitsToDecimal(money inventorydomain.Money) string {

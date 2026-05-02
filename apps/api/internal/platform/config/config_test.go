@@ -10,6 +10,7 @@ func TestLoadFromEnvironmentRejectsWildcardOrigins(t *testing.T) {
 	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
 	t.Setenv("SUPABASE_JWT_SECRET", "secret")
 	t.Setenv("MERCADOPAGO_ACCESS_TOKEN", "token")
+	t.Setenv("MERCADOPAGO_WEBHOOK_SECRET", "secret")
 
 	_, err := LoadFromEnvironment()
 	if err == nil {

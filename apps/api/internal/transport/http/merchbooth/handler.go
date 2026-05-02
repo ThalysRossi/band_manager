@@ -3,11 +3,13 @@ package merchboothhandler
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
@@ -16,12 +18,13 @@ import (
 )
 
 type Handler struct {
-	authenticator     session.Authenticator
-	accountRepository accounts.BandAccountRepository
-	merchRepository   applicationmerchbooth.Repository
-	paymentProvider   applicationmerchbooth.PaymentProvider
-	logger            *slog.Logger
-	now               func() time.Time
+	authenticator            session.Authenticator
+	accountRepository        accounts.BandAccountRepository
+	merchRepository          applicationmerchbooth.Repository
+	paymentProvider          applicationmerchbooth.PaymentProvider
+	mercadoPagoWebhookSecret string
+	logger                   *slog.Logger
+	now                      func() time.Time
 }
 
 type BoothItemsResponse struct {
@@ -48,6 +51,14 @@ type CashCheckoutRequest struct {
 
 type PixCheckoutRequest struct {
 	Items []CartItemRequest `json:"items"`
+}
+
+type PaymentVerificationResponse struct {
+	Sale SaleResponse `json:"sale"`
+}
+
+type WebhookResponse struct {
+	Status string `json:"status"`
 }
 
 type CartItemRequest struct {
@@ -125,14 +136,15 @@ type PhotoResponse struct {
 	SizeBytes   int    `json:"sizeBytes"`
 }
 
-func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, logger *slog.Logger) Handler {
+func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, mercadoPagoWebhookSecret string, logger *slog.Logger) Handler {
 	return Handler{
-		authenticator:     authenticator,
-		accountRepository: accountRepository,
-		merchRepository:   merchRepository,
-		paymentProvider:   paymentProvider,
-		logger:            logger,
-		now:               time.Now,
+		authenticator:            authenticator,
+		accountRepository:        accountRepository,
+		merchRepository:          merchRepository,
+		paymentProvider:          paymentProvider,
+		mercadoPagoWebhookSecret: strings.TrimSpace(mercadoPagoWebhookSecret),
+		logger:                   logger,
+		now:                      time.Now,
 	}
 }
 
@@ -226,6 +238,60 @@ func (handler Handler) CreatePixCheckout(response http.ResponseWriter, request *
 	handler.writeJSON(response, http.StatusCreated, toSaleResponse(sale))
 }
 
+func (handler Handler) VerifyPixPayment(response http.ResponseWriter, request *http.Request) {
+	accountContext, ok := handler.accountContext(response, request)
+	if !ok {
+		return
+	}
+
+	idempotencyKey, requestID, ok := handler.mutationHeaders(response, request)
+	if !ok {
+		return
+	}
+
+	paymentID := strings.TrimSpace(chi.URLParam(request, "paymentID"))
+	sale, err := applicationmerchbooth.VerifyPixPayment(request.Context(), handler.merchRepository, handler.paymentProvider, applicationmerchbooth.VerifyPixPaymentInput{
+		Account:        accountContext,
+		PaymentID:      paymentID,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		UpdatedAt:      handler.now().UTC(),
+	})
+	if err != nil {
+		handler.writeMerchBoothError(response, "pix payment verification failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusOK, PaymentVerificationResponse{Sale: toSaleResponse(sale)})
+}
+
+func (handler Handler) HandleMercadoPagoOrderWebhook(response http.ResponseWriter, request *http.Request) {
+	rawBody, err := io.ReadAll(http.MaxBytesReader(response, request.Body, 1<<20))
+	if err != nil {
+		handler.writeError(response, http.StatusBadRequest, "invalid_webhook_body", "Webhook body could not be read")
+		return
+	}
+
+	now := handler.now().UTC()
+	_, err = applicationmerchbooth.HandleMercadoPagoOrderWebhook(request.Context(), handler.merchRepository, handler.paymentProvider, applicationmerchbooth.MercadoPagoOrderWebhookInput{
+		DataID:          request.URL.Query().Get("data.id"),
+		Type:            request.URL.Query().Get("type"),
+		SignatureHeader: request.Header.Get("x-signature"),
+		RequestID:       request.Header.Get("x-request-id"),
+		WebhookSecret:   handler.mercadoPagoWebhookSecret,
+		RawQuery:        request.URL.RawQuery,
+		RawBody:         rawBody,
+		ReceivedAt:      now,
+		Now:             now,
+	})
+	if err != nil {
+		handler.writeMerchBoothError(response, "mercadopago webhook failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusOK, WebhookResponse{Status: "processed"})
+}
+
 func (handler Handler) accountContext(response http.ResponseWriter, request *http.Request) (applicationmerchbooth.AccountContext, bool) {
 	authenticatedUser, ok := handler.authenticate(response, request)
 	if !ok {
@@ -309,6 +375,10 @@ func (handler Handler) writeMerchBoothError(response http.ResponseWriter, logMes
 		handler.writeError(response, http.StatusConflict, "idempotency_conflict", err.Error())
 	case errors.Is(err, applicationmerchbooth.ErrPaymentProvider):
 		handler.writeError(response, http.StatusBadGateway, "payment_provider_failed", err.Error())
+	case errors.Is(err, applicationmerchbooth.ErrWebhookSignature):
+		handler.writeError(response, http.StatusUnauthorized, "webhook_signature_invalid", err.Error())
+	case errors.Is(err, applicationmerchbooth.ErrPaymentNotFound):
+		handler.writeError(response, http.StatusNotFound, "payment_not_found", err.Error())
 	case strings.Contains(err.Error(), "alpha write access requires owner role"):
 		handler.writeError(response, http.StatusForbidden, "write_forbidden", err.Error())
 	default:

@@ -60,13 +60,14 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 
 func testConfig() config.Config {
 	return config.Config{
-		Environment:            "test",
-		Address:                ":8080",
-		AllowedOrigins:         []string{"http://localhost:5173"},
-		DatabaseURL:            "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
-		RedisURL:               "redis://localhost:6379/0",
-		SupabaseJWTSecret:      "secret",
-		MercadoPagoAccessToken: "token",
+		Environment:              "test",
+		Address:                  ":8080",
+		AllowedOrigins:           []string{"http://localhost:5173"},
+		DatabaseURL:              "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
+		RedisURL:                 "redis://localhost:6379/0",
+		SupabaseJWTSecret:        "secret",
+		MercadoPagoAccessToken:   "token",
+		MercadoPagoWebhookSecret: "webhook_secret",
 	}
 }
 
@@ -134,9 +135,25 @@ func (repository testMerchBoothRepository) FailPixCheckoutPaymentCreation(ctx co
 	return nil
 }
 
+func (repository testMerchBoothRepository) GetPixPaymentProviderOrderID(ctx context.Context, query applicationmerchbooth.GetPixPaymentProviderOrderIDQuery) (string, error) {
+	return "order_1", nil
+}
+
+func (repository testMerchBoothRepository) ApplyPixPaymentStatus(ctx context.Context, command applicationmerchbooth.ApplyPixPaymentStatusCommand) (applicationmerchbooth.Sale, error) {
+	return applicationmerchbooth.Sale{}, nil
+}
+
+func (repository testMerchBoothRepository) RecordPaymentEvent(ctx context.Context, command applicationmerchbooth.PaymentEventCommand) error {
+	return nil
+}
+
 type testPaymentProvider struct{}
 
 func (provider testPaymentProvider) CreatePixPayment(ctx context.Context, command applicationmerchbooth.CreatePixPaymentCommand) (applicationmerchbooth.PixPayment, error) {
+	return applicationmerchbooth.PixPayment{}, nil
+}
+
+func (provider testPaymentProvider) GetPaymentStatus(ctx context.Context, command applicationmerchbooth.GetPaymentStatusCommand) (applicationmerchbooth.PixPayment, error) {
 	return applicationmerchbooth.PixPayment{}, nil
 }
 

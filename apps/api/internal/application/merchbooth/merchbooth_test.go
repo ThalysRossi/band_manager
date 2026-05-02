@@ -2,7 +2,11 @@ package merchbooth
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -162,6 +166,55 @@ func TestCreatePixCheckoutReleasesReservationWhenProviderFails(t *testing.T) {
 	}
 }
 
+func TestVerifyMercadoPagoOrderWebhookSignatureAcceptsValidSignature(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	timestamp := now.UnixMilli()
+	rawTimestamp := strconv.FormatInt(timestamp, 10)
+	manifest := mercadoPagoSignatureManifest("ord01jq4s4ky8hwq6na5pxb65b3d3", "request_1", rawTimestamp)
+	signature := testMercadoPagoSignature(manifest, "webhook_secret")
+
+	verifiedWebhook, err := VerifyMercadoPagoOrderWebhookSignature(MercadoPagoOrderWebhookInput{
+		DataID:          "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+		Type:            "order",
+		SignatureHeader: "ts=" + rawTimestamp + ",v1=" + signature,
+		RequestID:       "request_1",
+		WebhookSecret:   "webhook_secret",
+		RawQuery:        "data.id=ORD01JQ4S4KY8HWQ6NA5PXB65B3D3&type=order",
+		RawBody:         []byte(`{"type":"order"}`),
+		ReceivedAt:      now,
+		Now:             now,
+	})
+	if err != nil {
+		t.Fatalf("verify webhook signature: %v", err)
+	}
+
+	if verifiedWebhook.ProviderOrderID != "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3" {
+		t.Fatalf("expected original order id, got %q", verifiedWebhook.ProviderOrderID)
+	}
+}
+
+func TestVerifyMercadoPagoOrderWebhookSignatureRejectsInvalidSignature(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	_, err := VerifyMercadoPagoOrderWebhookSignature(MercadoPagoOrderWebhookInput{
+		DataID:          "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+		Type:            "order",
+		SignatureHeader: "ts=" + strconv.FormatInt(now.UnixMilli(), 10) + ",v1=invalid",
+		RequestID:       "request_1",
+		WebhookSecret:   "webhook_secret",
+		RawQuery:        "data.id=ORD01JQ4S4KY8HWQ6NA5PXB65B3D3&type=order",
+		RawBody:         []byte(`{"type":"order"}`),
+		ReceivedAt:      now,
+		Now:             now,
+	})
+	if err == nil {
+		t.Fatal("expected invalid signature error")
+	}
+}
+
 func validCreateCashCheckoutInput() CreateCashCheckoutInput {
 	return CreateCashCheckoutInput{
 		Account: AccountContext{
@@ -235,10 +288,35 @@ func (repository *fakeRepository) FailPixCheckoutPaymentCreation(ctx context.Con
 	return repository.err
 }
 
+func (repository *fakeRepository) GetPixPaymentProviderOrderID(ctx context.Context, query GetPixPaymentProviderOrderIDQuery) (string, error) {
+	if ctx == nil {
+		return "", errors.New("context is required")
+	}
+
+	return "order_1", repository.err
+}
+
+func (repository *fakeRepository) ApplyPixPaymentStatus(ctx context.Context, command ApplyPixPaymentStatusCommand) (Sale, error) {
+	if ctx == nil {
+		return Sale{}, errors.New("context is required")
+	}
+
+	return repository.sale, repository.err
+}
+
+func (repository *fakeRepository) RecordPaymentEvent(ctx context.Context, command PaymentEventCommand) error {
+	if ctx == nil {
+		return errors.New("context is required")
+	}
+
+	return repository.err
+}
+
 type fakePaymentProvider struct {
-	command CreatePixPaymentCommand
-	payment PixPayment
-	err     error
+	command       CreatePixPaymentCommand
+	statusCommand GetPaymentStatusCommand
+	payment       PixPayment
+	err           error
 }
 
 func (provider *fakePaymentProvider) CreatePixPayment(ctx context.Context, command CreatePixPaymentCommand) (PixPayment, error) {
@@ -254,6 +332,25 @@ func (provider *fakePaymentProvider) CreatePixPayment(ctx context.Context, comma
 	return provider.payment, nil
 }
 
+func (provider *fakePaymentProvider) GetPaymentStatus(ctx context.Context, command GetPaymentStatusCommand) (PixPayment, error) {
+	if ctx == nil {
+		return PixPayment{}, errors.New("context is required")
+	}
+
+	provider.statusCommand = command
+	if provider.err != nil {
+		return PixPayment{}, provider.err
+	}
+
+	return provider.payment, nil
+}
+
 func inventoryMoney(amount int) inventorydomain.Money {
 	return inventorydomain.Money{Amount: amount, Currency: "BRL"}
+}
+
+func testMercadoPagoSignature(manifest string, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(manifest))
+	return hex.EncodeToString(mac.Sum(nil))
 }

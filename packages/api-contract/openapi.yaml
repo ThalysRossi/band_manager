@@ -602,6 +602,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /financial-reports:
+    get:
+      operationId: getFinancialReport
+      summary: Get finalized merch sales financial report
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive local band date in YYYY-MM-DD format.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive local band date in YYYY-MM-DD format.
+      responses:
+        '200':
+          description: Financial report for finalized merch sales
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialReportResponse'
+        '400':
+          description: Invalid report date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot read reports in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Report query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -860,6 +912,142 @@ components:
           type: string
           enum:
             - BRL
+    FinancialReportResponse:
+      type: object
+      required:
+        - range
+        - summary
+        - paymentMethods
+        - categories
+        - products
+        - days
+      properties:
+        range:
+          $ref: '#/components/schemas/FinancialReportRange'
+        summary:
+          $ref: '#/components/schemas/FinancialReportSummary'
+        paymentMethods:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialReportPaymentMethodBreakdown'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialReportCategoryBreakdown'
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialReportProductBreakdown'
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialReportDayBreakdown'
+    FinancialReportRange:
+      type: object
+      required:
+        - from
+        - to
+        - timezone
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timezone:
+          type: string
+          minLength: 1
+    FinancialReportSummary:
+      type: object
+      required:
+        - saleCount
+        - itemCount
+        - grossRevenue
+        - totalHistoricalCost
+        - expectedProfit
+      properties:
+        saleCount:
+          type: integer
+          minimum: 0
+        itemCount:
+          type: integer
+          minimum: 0
+        grossRevenue:
+          $ref: '#/components/schemas/Money'
+        totalHistoricalCost:
+          $ref: '#/components/schemas/Money'
+        expectedProfit:
+          $ref: '#/components/schemas/SignedMoney'
+    FinancialReportPaymentMethodBreakdown:
+      allOf:
+        - $ref: '#/components/schemas/FinancialReportAggregate'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum:
+                - cash
+                - pix
+                - card
+    FinancialReportCategoryBreakdown:
+      allOf:
+        - $ref: '#/components/schemas/FinancialReportAggregate'
+        - type: object
+          required:
+            - category
+          properties:
+            category:
+              $ref: '#/components/schemas/InventoryCategory'
+    FinancialReportProductBreakdown:
+      allOf:
+        - $ref: '#/components/schemas/FinancialReportAggregate'
+        - type: object
+          required:
+            - productId
+            - productName
+            - category
+          properties:
+            productId:
+              type: string
+              format: uuid
+            productName:
+              type: string
+            category:
+              $ref: '#/components/schemas/InventoryCategory'
+    FinancialReportDayBreakdown:
+      allOf:
+        - $ref: '#/components/schemas/FinancialReportAggregate'
+        - type: object
+          required:
+            - date
+          properties:
+            date:
+              type: string
+              format: date
+    FinancialReportAggregate:
+      type: object
+      required:
+        - saleCount
+        - itemCount
+        - grossRevenue
+        - totalHistoricalCost
+        - expectedProfit
+      properties:
+        saleCount:
+          type: integer
+          minimum: 0
+        itemCount:
+          type: integer
+          minimum: 0
+        grossRevenue:
+          $ref: '#/components/schemas/Money'
+        totalHistoricalCost:
+          $ref: '#/components/schemas/Money'
+        expectedProfit:
+          $ref: '#/components/schemas/SignedMoney'
     InventoryCategory:
       type: string
       enum:

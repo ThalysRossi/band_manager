@@ -6,22 +6,25 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
+	applicationfinancialreports "github.com/thalys/band-manager/apps/api/internal/application/financialreports"
 	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 	"github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
+	financialreportshandler "github.com/thalys/band-manager/apps/api/internal/transport/http/financialreports"
 	inventoryhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/inventory"
 	merchboothhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
 )
 
 type Dependencies struct {
-	Authenticator        session.Authenticator
-	AccountRepository    accounts.BandAccountRepository
-	InventoryRepository  applicationinventory.Repository
-	MerchBoothRepository applicationmerchbooth.Repository
-	PaymentProvider      applicationmerchbooth.PaymentProvider
+	Authenticator              session.Authenticator
+	AccountRepository          accounts.BandAccountRepository
+	InventoryRepository        applicationinventory.Repository
+	MerchBoothRepository       applicationmerchbooth.Repository
+	FinancialReportsRepository applicationfinancialreports.Repository
+	PaymentProvider            applicationmerchbooth.PaymentProvider
 }
 
 func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dependencies) http.Handler {
@@ -51,6 +54,9 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 	router.Post("/merch-booth/checkouts/card", merchBoothHandler.CreateCardCheckout)
 	router.Post("/merch-booth/payments/{paymentID}/verify", merchBoothHandler.VerifyPixPayment)
 	router.Post("/webhooks/mercadopago/orders", merchBoothHandler.HandleMercadoPagoOrderWebhook)
+
+	financialReportsHandler := financialreportshandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.FinancialReportsRepository, appLogger)
+	router.Get("/financial-reports", financialReportsHandler.GetFinancialReport)
 
 	return router
 }

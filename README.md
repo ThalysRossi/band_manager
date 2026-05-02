@@ -28,6 +28,18 @@ docker compose up -d postgres redis
 pnpm dev:web
 ```
 
+Confirm local Postgres is healthy before running database-backed API work:
+
+```bash
+docker compose exec postgres pg_isready -U band_manager -d band_manager
+```
+
+The local database URL is:
+
+```bash
+postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable
+```
+
 Run the API with explicit local environment variables:
 
 ```bash
@@ -42,6 +54,17 @@ MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 MERCADOPAGO_POINT_TERMINAL_ID=replace-me \
 pnpm dev:api
 ```
+
+Run Postgres integration tests only after the Compose database is up and healthy:
+
+```bash
+cd apps/api
+DATABASE_URL='postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable' \
+GOCACHE=/tmp/go-build-cache \
+go test ./internal/infrastructure/postgres/... -v
+```
+
+If local port `5432` is already in use, stop the conflicting service or change the Compose port mapping and use the matching `DATABASE_URL`.
 
 ## Validation
 

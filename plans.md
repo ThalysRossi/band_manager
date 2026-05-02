@@ -4,14 +4,14 @@
 
 Build a mobile-first web app for Brazilian underground bands to manage merch inventory and merch booth sales.
 
-The alpha must be fully functional, not static-only. It should support a real backend, PostgreSQL persistence, authentication, object storage, payment-provider integration, offline cash sales, and deployment from a monorepo.
+The alpha must be fully functional, not static-only. It should support a real backend, PostgreSQL persistence, authentication, object storage, payment-provider integration, and deployment from a monorepo.
 
 The alpha focuses on the most business-rule-heavy areas:
 
 1. Inventory
 2. Merch Booth
 
-Financial reports and calendar are planned, but they are not the first implementation priority.
+The backend should expose the complete alpha API surface before non-critical UI work. The alpha frontend is limited to login, inventory, and merch booth. Financial reports, calendar, and offline UI are deferred after their backend contracts are stable.
 
 ## 2. Key product decisions
 
@@ -170,14 +170,22 @@ Recommended local commands:
 
 ```bash
 pnpm install
-pnpm lint
-pnpm format:check
-pnpm test
 pnpm --filter web dev
 docker compose up -d postgres redis
 cd apps/api && go test ./...
 cd apps/api && go run ./cmd/api
 ```
+
+PostgreSQL-backed integration tests require an explicitly running local database. Start and verify it before setting `DATABASE_URL`:
+
+```bash
+docker compose up -d postgres redis
+docker compose exec postgres pg_isready -U band_manager -d band_manager
+cd apps/api
+DATABASE_URL='postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable' go test ./internal/infrastructure/postgres/... -v
+```
+
+Do not treat skipped Postgres integration tests as a failure when `DATABASE_URL` is unset.
 
 Suggested root scripts:
 
@@ -281,14 +289,11 @@ apps/web/src/
     auth/
     inventory/
     merch-booth/
-    financial-reports/
-    calendar/
   shared/
     api/
     components/
     i18n/
     lib/
-    offline/
     ui/
   test/
 ```
@@ -299,7 +304,6 @@ Rules:
 - Shared UI primitives go under `shared`.
 - Domain-specific reusable logic goes under the relevant feature.
 - Use TanStack Query for server state.
-- Use IndexedDB/outbox for offline state.
 - Use React Hook Form + Zod for forms.
 - Use React Testing Library with user-visible behavior.
 
@@ -419,14 +423,13 @@ The owner can:
 - checkout with card if the MercadoPago spike confirms a viable Point/card-reader implementation path
 - retry failed payment verification
 - cancel failed/pending purchase
-- operate offline with cash only
 
 ### Business rules
 
 - Empty cart checkout is disabled.
 - Sold-out items cannot be added.
 - Checkout reserves inventory first.
-- Sale finalizes only after valid payment confirmation, except offline cash sales.
+- Sale finalizes only after valid payment confirmation, except online cash sales.
 - Payment cancellation releases inventory.
 - Failed payment prompts retry or cancel.
 - Mixed full payment methods are allowed.
@@ -444,8 +447,6 @@ The owner can:
 - Cancelled payment releases inventory.
 - Empty cart cannot checkout.
 - Sold-out Add to Cart button is disabled.
-- Offline cash sale is queued and marked pending sync.
-- Sync finalizes queued offline cash sale when online.
 - Idempotent checkout retries do not duplicate sales.
 
 ## 12. MercadoPago spike
@@ -472,9 +473,9 @@ Card support is alpha-critical if MercadoPago Point/card-reader integration is f
 
 Do not implement production payment flows until the spike is complete.
 
-## 13. Offline model
+## 13. Deferred offline model
 
-Use IndexedDB for:
+Offline support is not part of the alpha frontend or backend implementation. A future offline phase should use IndexedDB for:
 
 - cached inventory
 - cached booth items
@@ -483,17 +484,13 @@ Use IndexedDB for:
 - outbox queue
 - sync status
 
-Alpha offline constraints:
+Future offline constraints:
 
 - Offline checkout supports cash only.
 - Offline Pix is disabled.
 - Offline card is disabled.
 - Offline sale is marked pending sync.
 - User sees a visible pending sync banner.
-- Automatic conflict handling is acceptable because only the owner writes in alpha.
-
-Future:
-
 - Multi-device conflict resolution.
 - Manual conflict review.
 - Fan-facing offline limitations.
@@ -612,7 +609,7 @@ Coverage target:
 - 80% minimum.
 - Meaningful behavior coverage is more important than raw percentage.
 - Avoid unit tests that exist only to inflate coverage or mock implementation details.
-- Prefer integration, E2E, smoke, and real-behavior tests for database constraints, API behavior, Supabase/MercadoPago adapters, checkout flows, offline sync, and UI behavior.
+- Prefer integration, E2E, smoke, and real-behavior tests for database constraints, API behavior, Supabase/MercadoPago adapters, checkout flows, and UI behavior.
 
 ## 16. CI/CD plan
 
@@ -700,7 +697,15 @@ Path filters:
 - Transactions.
 - Tests.
 
-### Step 7 — Frontend foundation
+### Step 7 — Remaining backend API surface
+
+- Financial reports API.
+- Calendar API.
+- Account-management API contracts needed for alpha operations.
+- OpenAPI paths and schemas for every backend route.
+- Backend tests.
+
+### Step 8 — Frontend foundation
 
 - Router.
 - Auth pages.
@@ -711,7 +716,7 @@ Path filters:
 - Header.
 - MSW.
 
-### Step 8 — Inventory frontend
+### Step 9 — Inventory frontend
 
 - List.
 - Create.
@@ -720,30 +725,16 @@ Path filters:
 - Upload.
 - Tests.
 
-### Step 9 — Merch Booth frontend
+### Step 10 — Merch Booth frontend
 
 - Grid.
 - Cart.
 - Cash checkout.
 - Pix checkout.
 - Card checkout when the MercadoPago spike confirms a viable alpha card path.
-- Offline cash queue.
 - Tests.
 
-### Step 10 — Minimal financial reports
-
-- Transaction-derived default report.
-- Last 3 months by default.
-- Custom date range.
-
-### Step 11 — Minimal calendar
-
-- Local events.
-- Recurrence.
-- Venue.
-- Completed flag.
-
-### Step 12 — Alpha hardening
+### Step 11 — Alpha hardening
 
 - Security review.
 - Responsive review.

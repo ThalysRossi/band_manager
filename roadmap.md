@@ -30,7 +30,7 @@ Everything else should support or protect this loop.
 - React frontend.
 - Monorepo.
 - i18n from alpha.
-- Offline support from alpha.
+- Offline support is deferred until after alpha.
 - BRL only in alpha, currency abstraction from the start.
 - Supabase Free acceptable for alpha database/auth/storage.
 - Go backend remains business-rule authority.
@@ -256,7 +256,33 @@ For alpha, staging and production may use the same provider family but different
 - Duplicate checkout does not double-sell.
 - Sale creates one transaction per item.
 
-## Phase 7 — Frontend foundation
+## Phase 7 — Remaining backend API surface
+
+### Scope
+
+- Financial reports API.
+- Calendar API.
+- Account-management API contracts needed for alpha operations.
+- OpenAPI coverage for every backend route.
+- Backend tests for new endpoint behavior.
+
+### Deliverables
+
+- Report API.
+- Calendar API.
+- Account-management routes where needed.
+- OpenAPI updates.
+- Backend tests.
+
+### Exit criteria
+
+- Backend exposes the complete alpha API surface.
+- Report endpoints derive data from finalized transactions.
+- Calendar endpoints persist local events and recurrence.
+- Protected backend routes enforce owner/viewer alpha permissions.
+- No report, calendar, or account-management UI is required for alpha.
+
+## Phase 8 — Frontend foundation
 
 ### Scope
 
@@ -276,7 +302,6 @@ For alpha, staging and production may use the same provider family but different
 
 - Frontend shell.
 - Login/sign-up UI.
-- Landing page shell.
 - Navigation shell.
 - Translation files.
 - MSW setup.
@@ -290,7 +315,7 @@ For alpha, staging and production may use the same provider family but different
 - Bottom mobile navigation works.
 - Frontend can call backend in staging.
 
-## Phase 8 — Inventory frontend
+## Phase 9 — Inventory frontend
 
 ### Scope
 
@@ -321,7 +346,7 @@ For alpha, staging and production may use the same provider family but different
 - Invalid values are blocked.
 - Required fields are enforced.
 
-## Phase 9 — Merch Booth frontend
+## Phase 10 — Merch Booth frontend
 
 ### Scope
 
@@ -332,14 +357,11 @@ For alpha, staging and production may use the same provider family but different
 - Pix QR flow.
 - Card payment flow when the MercadoPago spike confirms a viable Point/card reader path.
 - Payment retry/cancel prompt.
-- Offline cash mode.
-- Pending sync banner.
 
 ### Deliverables
 
 - Merch Booth UI.
 - Checkout UI.
-- Offline queue UI.
 - Tests.
 - Cypress flows.
 
@@ -353,83 +375,8 @@ For alpha, staging and production may use the same provider family but different
 - User can cancel and release inventory.
 - User can remove all items from cart.
 - Sold-out Add to Cart is disabled.
-- Offline cash sale is queued.
 
-## Phase 10 — Minimal financial reports
-
-### Scope
-
-- Transactions generated from sales.
-- Last 3 months default report.
-- Custom date range.
-- Income/expense/balance calculations.
-- Pending/unverified payments excluded.
-
-### Deliverables
-
-- Report API.
-- Report page.
-- Tests.
-
-### Exit criteria
-
-- Default report loads last 3 months.
-- Custom date range works.
-- Sale transactions are included.
-- Pending payments are excluded.
-- Negative backend amounts are rejected.
-
-## Phase 11 — Minimal local calendar
-
-### Scope
-
-- Local events.
-- Recurring events.
-- Venue/location.
-- Completed flag.
-- Offline visibility.
-
-### Deliverables
-
-- Calendar API.
-- Calendar page.
-- Tests.
-
-### Exit criteria
-
-- User can create event.
-- User can create recurring event.
-- User can mark event completed.
-- Event is visible offline.
-
-## Phase 12 — PWA/offline hardening
-
-### Scope
-
-- Installable PWA.
-- Service worker strategy.
-- Static asset caching.
-- API data caching policy.
-- Offline banner.
-- Update available prompt.
-- IndexedDB sync hardening.
-
-### Deliverables
-
-- PWA manifest.
-- Service worker.
-- Offline strategy document.
-- Sync tests.
-
-### Exit criteria
-
-- App is installable.
-- App works under poor venue internet.
-- Offline cash mode is clear.
-- User sees pending sync state.
-- New app version flow is safe.
-
-## Phase 13 — Alpha release hardening
+## Phase 11 — Alpha release hardening
 
 ### Scope
 
@@ -453,11 +400,30 @@ For alpha, staging and production may use the same provider family but different
 ### Exit criteria
 
 - Critical Cypress flows pass.
-- Backend integration tests pass.
+- Backend integration tests pass when local or CI Postgres is available.
 - Security review has no blocking issues.
-- Owner can use the system end-to-end.
+- Owner can use login, inventory, and merch booth end-to-end.
 
 ## Future roadmap
+
+### Offline/PWA
+
+- Installable PWA.
+- Service worker strategy.
+- Static asset caching.
+- API data caching policy.
+- Offline banner.
+- Offline cash mode.
+- Pending sync banner.
+- IndexedDB sync hardening.
+
+### Reports UI
+
+- Report page.
+
+### Calendar UI
+
+- Calendar page.
 
 ### Payments
 

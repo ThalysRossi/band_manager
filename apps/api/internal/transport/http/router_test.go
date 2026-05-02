@@ -3,15 +3,19 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
+	applicationfinancialreports "github.com/thalys/band-manager/apps/api/internal/application/financialreports"
 	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
+	inventorydomain "github.com/thalys/band-manager/apps/api/internal/domain/inventory"
+	"github.com/thalys/band-manager/apps/api/internal/domain/permissions"
 	"github.com/thalys/band-manager/apps/api/internal/platform/config"
 )
 
@@ -58,6 +62,65 @@ func TestCORSAllowsConfiguredOrigin(t *testing.T) {
 	}
 }
 
+func TestFinancialReportsRouteReturnsReport(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/financial-reports?from=2026-05-01&to=2026-05-02", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body struct {
+		Range struct {
+			From     string `json:"from"`
+			To       string `json:"to"`
+			Timezone string `json:"timezone"`
+		} `json:"range"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode financial report response: %v", err)
+	}
+
+	if body.Range.Timezone != "America/Recife" {
+		t.Fatalf("expected report timezone, got %q", body.Range.Timezone)
+	}
+}
+
+func TestFinancialReportsRouteRejectsUnauthenticatedRequest(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/financial-reports", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestFinancialReportsRouteRejectsInvalidQueryParams(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/financial-reports?from=2026-05-03&to=2026-05-01", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
 func testConfig() config.Config {
 	return config.Config{
 		Environment:                "test",
@@ -75,7 +138,15 @@ func testConfig() config.Config {
 type testAuthenticator struct{}
 
 func (authenticator testAuthenticator) Authenticate(ctx context.Context, bearerToken string) (session.AuthenticatedUser, error) {
-	return session.AuthenticatedUser{}, nil
+	if bearerToken != "valid-token" {
+		return session.AuthenticatedUser{}, errors.New("invalid bearer token")
+	}
+
+	return session.AuthenticatedUser{
+		Provider:       "supabase",
+		ProviderUserID: "auth_user_1",
+		Email:          "band@example.com",
+	}, nil
 }
 
 type testAccountRepository struct{}
@@ -85,7 +156,14 @@ func (repository testAccountRepository) CreateOwnerAccount(ctx context.Context, 
 }
 
 func (repository testAccountRepository) GetCurrentAccount(ctx context.Context, query accounts.CurrentAccountQuery) (accounts.OwnerAccount, error) {
-	return accounts.OwnerAccount{}, nil
+	return accounts.OwnerAccount{
+		UserID:       "00000000-0000-0000-0000-000000000001",
+		BandID:       "00000000-0000-0000-0000-000000000002",
+		Email:        "band@example.com",
+		BandName:     "Os Testes",
+		BandTimezone: "America/Recife",
+		Role:         permissions.RoleViewer,
+	}, nil
 }
 
 type testInventoryRepository struct{}
@@ -174,12 +252,28 @@ func (provider testPaymentProvider) GetPaymentStatus(ctx context.Context, comman
 	return applicationmerchbooth.PixPayment{}, nil
 }
 
+type testFinancialReportsRepository struct{}
+
+func (repository testFinancialReportsRepository) GetReport(ctx context.Context, query applicationfinancialreports.ReportQuery) (applicationfinancialreports.Report, error) {
+	return applicationfinancialreports.Report{
+		Range: query.Range,
+		Summary: applicationfinancialreports.ReportSummary{
+			SaleCount:           1,
+			ItemCount:           2,
+			GrossRevenue:        inventorydomain.Money{Amount: 10000, Currency: "BRL"},
+			TotalHistoricalCost: inventorydomain.Money{Amount: 4000, Currency: "BRL"},
+			ExpectedProfit:      inventorydomain.Money{Amount: 6000, Currency: "BRL"},
+		},
+	}, nil
+}
+
 func testDependencies() Dependencies {
 	return Dependencies{
-		Authenticator:        testAuthenticator{},
-		AccountRepository:    testAccountRepository{},
-		InventoryRepository:  testInventoryRepository{},
-		MerchBoothRepository: testMerchBoothRepository{},
-		PaymentProvider:      testPaymentProvider{},
+		Authenticator:              testAuthenticator{},
+		AccountRepository:          testAccountRepository{},
+		InventoryRepository:        testInventoryRepository{},
+		MerchBoothRepository:       testMerchBoothRepository{},
+		FinancialReportsRepository: testFinancialReportsRepository{},
+		PaymentProvider:            testPaymentProvider{},
 	}
 }

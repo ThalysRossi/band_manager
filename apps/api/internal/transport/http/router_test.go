@@ -7,9 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
+	applicationcalendar "github.com/thalys/band-manager/apps/api/internal/application/calendar"
 	applicationfinancialreports "github.com/thalys/band-manager/apps/api/internal/application/financialreports"
 	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
@@ -118,6 +121,100 @@ func TestFinancialReportsRouteRejectsInvalidQueryParams(t *testing.T) {
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
+func TestCalendarEventsRouteReturnsEvents(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/calendar-events?from=2026-05-01&to=2026-05-31", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body struct {
+		Range struct {
+			Timezone string `json:"timezone"`
+		} `json:"range"`
+		Events []struct {
+			Title string `json:"title"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode calendar events response: %v", err)
+	}
+
+	if body.Range.Timezone != "America/Recife" {
+		t.Fatalf("expected calendar timezone, got %q", body.Range.Timezone)
+	}
+	if len(body.Events) != 1 {
+		t.Fatalf("expected one calendar event, got %d", len(body.Events))
+	}
+}
+
+func TestCalendarEventsRouteRejectsUnauthenticatedRequest(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/calendar-events?from=2026-05-01&to=2026-05-31", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+}
+
+func TestCalendarEventsRouteRejectsInvalidQueryParams(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/calendar-events?from=2026-05-31&to=2026-05-01", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
+func TestCalendarEventsRouteRejectsViewerWrite(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodPost, "/calendar-events", strings.NewReader(validCalendarEventRequestBody()))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_calendar_1")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, response.Code)
+	}
+}
+
+func TestCalendarEventsRouteReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), testDependencies())
+	request := httptest.NewRequest(http.MethodGet, "/calendar-events/40400000-0000-0000-0000-000000000000", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
 	}
 }
 
@@ -267,6 +364,76 @@ func (repository testFinancialReportsRepository) GetReport(ctx context.Context, 
 	}, nil
 }
 
+type testCalendarRepository struct{}
+
+func (repository testCalendarRepository) ListEvents(ctx context.Context, query applicationcalendar.ListEventsQuery) ([]applicationcalendar.Event, error) {
+	location := time.FixedZone("America/Recife", -3*60*60)
+	return []applicationcalendar.Event{
+		{
+			ID:            "11111111-1111-1111-1111-111111111111",
+			BandID:        query.Account.BandID,
+			Type:          applicationcalendar.EventTypeShow,
+			Title:         "Show em Recife",
+			StartsAtLocal: time.Date(2026, 5, 10, 20, 0, 0, 0, location),
+			EndsAtLocal:   time.Date(2026, 5, 10, 22, 0, 0, 0, location),
+			Timezone:      "America/Recife",
+			Recurrence: applicationcalendar.Recurrence{
+				Frequency: applicationcalendar.RecurrenceFrequencyNone,
+			},
+		},
+	}, nil
+}
+
+func (repository testCalendarRepository) GetEvent(ctx context.Context, query applicationcalendar.GetEventQuery) (applicationcalendar.Event, error) {
+	if query.EventID == "40400000-0000-0000-0000-000000000000" {
+		return applicationcalendar.Event{}, applicationcalendar.ErrCalendarEventNotFound
+	}
+
+	location := time.FixedZone("America/Recife", -3*60*60)
+	return applicationcalendar.Event{
+		ID:            query.EventID,
+		BandID:        query.Account.BandID,
+		Type:          applicationcalendar.EventTypeShow,
+		Title:         "Show em Recife",
+		StartsAtLocal: time.Date(2026, 5, 10, 20, 0, 0, 0, location),
+		EndsAtLocal:   time.Date(2026, 5, 10, 22, 0, 0, 0, location),
+		Timezone:      "America/Recife",
+		Recurrence: applicationcalendar.Recurrence{
+			Frequency: applicationcalendar.RecurrenceFrequencyNone,
+		},
+	}, nil
+}
+
+func (repository testCalendarRepository) CreateEvent(ctx context.Context, command applicationcalendar.CreateEventCommand) (applicationcalendar.Event, error) {
+	return applicationcalendar.Event{
+		ID:            "11111111-1111-1111-1111-111111111111",
+		BandID:        command.Account.BandID,
+		Type:          command.Type,
+		Title:         command.Title,
+		StartsAtLocal: command.StartsAtLocal,
+		EndsAtLocal:   command.EndsAtLocal,
+		Timezone:      command.Account.BandTimezone,
+		Recurrence:    command.Recurrence,
+	}, nil
+}
+
+func (repository testCalendarRepository) UpdateEvent(ctx context.Context, command applicationcalendar.UpdateEventCommand) (applicationcalendar.Event, error) {
+	return applicationcalendar.Event{
+		ID:            command.EventID,
+		BandID:        command.Account.BandID,
+		Type:          command.Type,
+		Title:         command.Title,
+		StartsAtLocal: command.StartsAtLocal,
+		EndsAtLocal:   command.EndsAtLocal,
+		Timezone:      command.Account.BandTimezone,
+		Recurrence:    command.Recurrence,
+	}, nil
+}
+
+func (repository testCalendarRepository) SoftDeleteEvent(ctx context.Context, command applicationcalendar.SoftDeleteEventCommand) error {
+	return nil
+}
+
 func testDependencies() Dependencies {
 	return Dependencies{
 		Authenticator:              testAuthenticator{},
@@ -274,6 +441,22 @@ func testDependencies() Dependencies {
 		InventoryRepository:        testInventoryRepository{},
 		MerchBoothRepository:       testMerchBoothRepository{},
 		FinancialReportsRepository: testFinancialReportsRepository{},
+		CalendarRepository:         testCalendarRepository{},
 		PaymentProvider:            testPaymentProvider{},
 	}
+}
+
+func validCalendarEventRequestBody() string {
+	return `{
+		"type": "show",
+		"title": "Show em Recife",
+		"description": "Set de 45 minutos",
+		"locationName": "Casa de Shows",
+		"address": "Rua Principal, 123",
+		"startsAtLocal": "2026-05-10T20:00:00",
+		"endsAtLocal": "2026-05-10T22:00:00",
+		"recurrence": {
+			"frequency": "none"
+		}
+	}`
 }

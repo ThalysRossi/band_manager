@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thalys/band-manager/apps/api/internal/infrastructure/mercadopago"
 	postgresaccount "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/account"
+	postgrescalendar "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/calendar"
 	postgresfinancialreports "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/financialreports"
 	postgresinventory "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/inventory"
 	postgresmerchbooth "github.com/thalys/band-manager/apps/api/internal/infrastructure/postgres/merchbooth"
@@ -50,6 +51,7 @@ func main() {
 	inventoryRepository := postgresinventory.NewRepository(databasePool)
 	merchBoothRepository := postgresmerchbooth.NewRepository(databasePool)
 	financialReportsRepository := postgresfinancialreports.NewRepository(databasePool)
+	calendarRepository := postgrescalendar.NewRepository(databasePool)
 	paymentProvider, err := mercadopago.NewClient(appConfig.MercadoPagoAccessToken, "https://api.mercadopago.com", http.DefaultClient, appLogger)
 	if err != nil {
 		appLogger.Error("mercadopago client creation failed", "error", err)
@@ -63,6 +65,7 @@ func main() {
 			InventoryRepository:        inventoryRepository,
 			MerchBoothRepository:       merchBoothRepository,
 			FinancialReportsRepository: financialReportsRepository,
+			CalendarRepository:         calendarRepository,
 			PaymentProvider:            paymentProvider,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
 :root {
-  color: #17201a;
-  background: #f7f7f4;
+  color: #f3f5ee;
+  background: #11130f;
   font-family:
     Inter,
     ui-sans-serif,
@@ -13,6 +13,19 @@
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --bg: #11130f;
+  --surface: #1a1d17;
+  --surface-strong: #242820;
+  --surface-soft: #151813;
+  --line: #363b31;
+  --line-soft: #2a2f27;
+  --text: #f3f5ee;
+  --muted: #aeb7a8;
+  --muted-strong: #cad0c4;
+  --accent: #48b982;
+  --accent-strong: #2f8f67;
+  --danger: #c76655;
+  --danger-strong: #9d4c40;
 }
 
 * {
@@ -23,6 +36,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
 }
 
 a {
@@ -33,24 +48,84 @@ a {
 .app-shell {
   min-height: 100vh;
   padding-bottom: 72px;
-  background: linear-gradient(180deg, rgba(247, 247, 244, 0.96), rgba(247, 247, 244, 1)),
-    radial-gradient(circle at 20% 0%, rgba(17, 120, 91, 0.12), transparent 32%);
+  background: linear-gradient(180deg, #151813 0%, var(--bg) 32%, var(--bg) 100%);
 }
 
 .top-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   min-height: 64px;
   padding: 16px;
-  border-bottom: 1px solid #deded6;
-  background: rgba(247, 247, 244, 0.92);
+  border-bottom: 1px solid var(--line);
+  background: rgba(17, 19, 15, 0.92);
   backdrop-filter: blur(12px);
+}
+
+.brand-lockup {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
 }
 
 .top-bar h1 {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 700;
+}
+
+.top-bar-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+.band-context {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.band-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(72, 185, 130, 0.45);
+  border-radius: 999px;
+  background: #163a2a;
+  color: #dff7ea;
+  font-size: 0.8125rem;
+  font-weight: 800;
+}
+
+.band-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  text-align: right;
+}
+
+.band-name,
+.band-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.band-name {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+
+.band-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .workspace {
@@ -72,7 +147,7 @@ a {
 
 .workspace-header p {
   margin: 0;
-  color: #596157;
+  color: var(--muted);
   font-size: 1rem;
 }
 
@@ -95,18 +170,18 @@ a {
 .auth-panel label {
   display: grid;
   gap: 6px;
-  color: #3c453b;
+  color: var(--muted-strong);
   font-size: 0.875rem;
   font-weight: 650;
 }
 
 .auth-panel input {
   min-height: 44px;
-  border: 1px solid #c8c9bf;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0 12px;
-  background: #fffffc;
-  color: #17201a;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
 }
 
@@ -114,14 +189,14 @@ a {
   min-height: 44px;
   border: 0;
   border-radius: 6px;
-  background: #11785b;
-  color: #fffffc;
+  background: var(--accent-strong);
+  color: #f7fff9;
   font: inherit;
   font-weight: 750;
 }
 
 .auth-panel a {
-  color: #11785b;
+  color: var(--accent);
   font-weight: 650;
 }
 
@@ -144,7 +219,7 @@ a {
 .account-muted,
 .account-section p {
   margin: 0;
-  color: #596157;
+  color: var(--muted);
 }
 
 .account-inline-form {
@@ -155,18 +230,18 @@ a {
 .account-inline-form label {
   display: grid;
   gap: 6px;
-  color: #3c453b;
+  color: var(--muted-strong);
   font-size: 0.875rem;
   font-weight: 650;
 }
 
 .account-inline-form input {
   min-height: 44px;
-  border: 1px solid #c8c9bf;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0 12px;
-  background: #fffffc;
-  color: #17201a;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
 }
 
@@ -177,14 +252,14 @@ a {
   border: 0;
   border-radius: 6px;
   padding: 0 12px;
-  background: #11785b;
-  color: #fffffc;
+  background: var(--accent-strong);
+  color: #f7fff9;
   font: inherit;
   font-weight: 750;
 }
 
 .account-table button {
-  background: #7d2f2f;
+  background: var(--danger-strong);
 }
 
 .account-table button:disabled {
@@ -199,19 +274,19 @@ a {
 
 .account-token-row code {
   overflow-wrap: anywhere;
-  border: 1px solid #d7d8d0;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px;
-  background: #fffffc;
-  color: #17201a;
+  background: var(--surface);
+  color: var(--text);
   font-size: 0.8125rem;
 }
 
 .account-table-wrap {
   overflow-x: auto;
-  border: 1px solid #deded6;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fffffc;
+  background: var(--surface);
 }
 
 .account-table {
@@ -224,13 +299,13 @@ a {
 .account-table th,
 .account-table td {
   padding: 10px 12px;
-  border-bottom: 1px solid #ecece6;
+  border-bottom: 1px solid var(--line-soft);
   text-align: left;
   vertical-align: middle;
 }
 
 .account-table th {
-  color: #3c453b;
+  color: var(--muted-strong);
   font-weight: 750;
 }
 
@@ -246,8 +321,8 @@ a {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 64px;
-  border-top: 1px solid #deded6;
-  background: rgba(255, 255, 252, 0.96);
+  border-top: 1px solid var(--line);
+  background: rgba(20, 23, 18, 0.96);
   backdrop-filter: blur(12px);
 }
 
@@ -258,9 +333,14 @@ a {
   gap: 4px;
   min-width: 0;
   min-height: 64px;
-  color: #3c453b;
+  color: var(--muted-strong);
   font-size: 0.75rem;
   font-weight: 650;
+}
+
+.bottom-nav a.is-active {
+  color: var(--text);
+  background: #203b2f;
 }
 
 .bottom-nav span {
@@ -300,7 +380,7 @@ a {
     min-height: calc(100vh - 65px);
     padding: 12px;
     border-top: 0;
-    border-right: 1px solid #deded6;
+    border-right: 1px solid var(--line);
   }
 
   .bottom-nav a {

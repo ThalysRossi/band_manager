@@ -83,6 +83,8 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
     expect(screen.getByText('Backend foundation is ready')).toBeInTheDocument()
+    expect(await screen.findByText('Os Testes')).toBeInTheDocument()
+    expect(screen.getByText('owner@example.com | Owner')).toBeInTheDocument()
   })
 
   it('returns to the requested protected route after login', async () => {

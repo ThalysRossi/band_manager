@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import {
   Link,
   Navigate,
@@ -17,6 +17,8 @@ import { translations } from 'i18n'
 
 import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
 import { LoginPage, SignupPage } from '../features/auth/AuthPages'
+import { getCurrentAccount } from '../features/auth/api'
+import type { CurrentAccountResponse } from '../features/auth/api'
 import { AuthSessionProvider, useAuthSession } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
 
@@ -141,7 +143,10 @@ function RootLayout() {
   return (
     <main className="app-shell">
       <header className="top-bar">
-        <h1>{translate('app.title')}</h1>
+        <div className="brand-lockup">
+          <h1>{translate('app.title')}</h1>
+        </div>
+        <HeaderAccountSummary translate={translate} />
       </header>
 
       <section className="workspace" aria-label={translate('app.title')}>
@@ -153,7 +158,12 @@ function RootLayout() {
           const Icon = item.icon
 
           return (
-            <Link key={item.key} to={item.href}>
+            <Link
+              key={item.key}
+              to={item.href}
+              activeOptions={{ exact: item.href === '/' }}
+              activeProps={{ className: 'is-active' }}
+            >
               <Icon aria-hidden="true" size={20} strokeWidth={2} />
               <span>{translate(item.key)}</span>
             </Link>
@@ -246,6 +256,59 @@ function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
   )
 }
 
+function HeaderAccountSummary(props: { translate: (key: TranslationKey) => string }) {
+  const session = useAuthSession()
+  const accessToken = session.state.status === 'authenticated' ? session.state.accessToken : ''
+
+  const accountQuery = useQuery({
+    queryKey: ['account', 'current', accessToken],
+    queryFn: () => getCurrentAccount(accessToken),
+    enabled: session.state.status === 'authenticated'
+  })
+
+  if (session.state.status === 'loading') {
+    return <p className="top-bar-status">{props.translate('account.loading')}</p>
+  }
+
+  if (session.state.status === 'unauthenticated') {
+    return null
+  }
+
+  if (accountQuery.isLoading) {
+    return <p className="top-bar-status">{props.translate('account.loading')}</p>
+  }
+
+  if (accountQuery.isError || accountQuery.data === undefined) {
+    return (
+      <p className="top-bar-status" role="status">
+        {props.translate('account.genericError')}
+      </p>
+    )
+  }
+
+  return <BandContext account={accountQuery.data} translate={props.translate} />
+}
+
+function BandContext(props: {
+  account: CurrentAccountResponse
+  translate: (key: TranslationKey) => string
+}) {
+  return (
+    <div className="band-context">
+      <span className="band-avatar" aria-hidden="true">
+        {bandInitials(props.account.activeBand.bandName)}
+      </span>
+      <span className="band-copy">
+        <span className="band-name">{props.account.activeBand.bandName}</span>
+        <span className="band-meta">
+          {props.account.user.email} |{' '}
+          {props.translate(roleLabelKey(props.account.activeBand.role))}
+        </span>
+      </span>
+    </div>
+  )
+}
+
 function ProtectedRoute(props: { redirect: ProtectedRoutePath; children: ReactNode }) {
   const session = useAuthSession()
   const translate = useTranslate()
@@ -273,6 +336,26 @@ function useTranslate(): (key: TranslationKey) => string {
 
 function createTranslator(locale: Locale): (key: TranslationKey) => string {
   return (key: TranslationKey): string => translations[locale][key]
+}
+
+function roleLabelKey(role: CurrentAccountResponse['activeBand']['role']): TranslationKey {
+  return `account.role.${role}`
+}
+
+function bandInitials(value: string): string {
+  const words = value
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word !== '')
+
+  if (words.length === 0) {
+    return 'BM'
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word.slice(0, 1).toUpperCase())
+    .join('')
 }
 
 function parseProtectedRoutePath(value: unknown): ProtectedRoutePath {

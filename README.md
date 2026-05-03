@@ -17,6 +17,7 @@ packages/
   config/
   i18n/
 docs/
+  setup/
   spikes/
 ```
 
@@ -27,6 +28,10 @@ pnpm install
 docker compose up -d postgres redis
 pnpm dev:web
 ```
+
+Supabase Auth is required for login/signup. See
+`docs/setup/supabase.md` for the required Supabase dashboard settings and
+environment variables.
 
 Confirm local Postgres is healthy before running database-backed API work:
 

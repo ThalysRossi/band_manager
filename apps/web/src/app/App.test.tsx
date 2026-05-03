@@ -62,6 +62,57 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: /Account/i })).toBeInTheDocument()
   })
 
+  it('redirects unauthenticated protected routes to login', async () => {
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/login')
+      expect(window.location.search).toBe('?redirect=%2Fmerch-booth')
+    })
+  })
+
+  it('renders protected workspace routes for authenticated users', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
+    expect(screen.getByText('Backend foundation is ready')).toBeInTheDocument()
+  })
+
+  it('returns to the requested protected route after login', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'access-token'
+        }
+      },
+      error: null
+    })
+    window.history.pushState({}, '', '/login?redirect=%2Faccount')
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Email'), {
+      target: { value: 'owner@example.com' }
+    })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
+    expect(await screen.findByText('owner@example.com')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/account')
+    })
+  })
+
   it('renders the owner signup form on the signup route', async () => {
     window.history.pushState({}, '', '/signup')
 

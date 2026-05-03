@@ -1,12 +1,15 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   Link,
+  Navigate,
   Outlet,
   RouterProvider,
   createRootRoute,
   createRoute,
-  createRouter
+  createRouter,
+  useNavigate
 } from '@tanstack/react-router'
 import { CalendarDays, ChartNoAxesCombined, Package, Store, UserRound } from 'lucide-react'
 import type { Locale, TranslationKey } from 'i18n'
@@ -14,7 +17,7 @@ import { translations } from 'i18n'
 
 import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
 import { LoginPage, SignupPage } from '../features/auth/AuthPages'
-import { AuthSessionProvider } from '../shared/auth/session'
+import { AuthSessionProvider, useAuthSession } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
 
 type NavigationItem = {
@@ -29,6 +32,8 @@ type NavigationLabelKey =
   | 'nav.reports'
   | 'nav.calendar'
   | 'nav.account'
+
+type ProtectedRoutePath = NavigationItem['href']
 
 const navigationItems: NavigationItem[] = [
   { key: 'nav.inventory', href: '/', icon: Package },
@@ -84,6 +89,11 @@ const acceptInviteRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (search: Record<string, unknown>): { redirect: ProtectedRoutePath } => {
+    return {
+      redirect: parseProtectedRoutePath(search.redirect)
+    }
+  },
   component: LoginRoutePage
 })
 
@@ -155,25 +165,45 @@ function RootLayout() {
 }
 
 function InventoryPage() {
-  return <WorkspaceHeader titleKey="nav.inventory" />
+  return (
+    <ProtectedRoute redirect="/">
+      <WorkspaceHeader titleKey="nav.inventory" />
+    </ProtectedRoute>
+  )
 }
 
 function MerchBoothPage() {
-  return <WorkspaceHeader titleKey="nav.merchBooth" />
+  return (
+    <ProtectedRoute redirect="/merch-booth">
+      <WorkspaceHeader titleKey="nav.merchBooth" />
+    </ProtectedRoute>
+  )
 }
 
 function FinancialReportsPage() {
-  return <WorkspaceHeader titleKey="nav.reports" />
+  return (
+    <ProtectedRoute redirect="/financial-reports">
+      <WorkspaceHeader titleKey="nav.reports" />
+    </ProtectedRoute>
+  )
 }
 
 function CalendarPage() {
-  return <WorkspaceHeader titleKey="nav.calendar" />
+  return (
+    <ProtectedRoute redirect="/calendar">
+      <WorkspaceHeader titleKey="nav.calendar" />
+    </ProtectedRoute>
+  )
 }
 
 function AccountRoutePage() {
   const translate = useTranslate()
 
-  return <AccountPage translate={translate} />
+  return (
+    <ProtectedRoute redirect="/account">
+      <AccountPage translate={translate} />
+    </ProtectedRoute>
+  )
 }
 
 function AcceptInviteRoutePage() {
@@ -185,8 +215,18 @@ function AcceptInviteRoutePage() {
 
 function LoginRoutePage() {
   const translate = useTranslate()
+  const navigate = useNavigate()
+  const session = useAuthSession()
+  const search = loginRoute.useSearch()
 
-  return <LoginPage translate={translate} />
+  return (
+    <LoginPage
+      translate={translate}
+      onLoginSuccess={() => {
+        void session.refresh().then(() => navigate({ to: search.redirect }))
+      }}
+    />
+  )
 }
 
 function SignupRoutePage() {
@@ -206,6 +246,25 @@ function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
   )
 }
 
+function ProtectedRoute(props: { redirect: ProtectedRoutePath; children: ReactNode }) {
+  const session = useAuthSession()
+  const translate = useTranslate()
+
+  if (session.state.status === 'loading') {
+    return (
+      <div className="workspace-header">
+        <p>{translate('account.loading')}</p>
+      </div>
+    )
+  }
+
+  if (session.state.status === 'unauthenticated') {
+    return <Navigate to="/login" search={{ redirect: props.redirect }} />
+  }
+
+  return <>{props.children}</>
+}
+
 function useTranslate(): (key: TranslationKey) => string {
   const locale = detectLocale(window.navigator.language)
 
@@ -214,4 +273,17 @@ function useTranslate(): (key: TranslationKey) => string {
 
 function createTranslator(locale: Locale): (key: TranslationKey) => string {
   return (key: TranslationKey): string => translations[locale][key]
+}
+
+function parseProtectedRoutePath(value: unknown): ProtectedRoutePath {
+  if (typeof value !== 'string') {
+    return '/'
+  }
+
+  const matchingItem = navigationItems.find((item) => item.href === value)
+  if (matchingItem === undefined) {
+    return '/'
+  }
+
+  return matchingItem.href
 }

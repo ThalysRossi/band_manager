@@ -2,6 +2,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TranslationKey } from 'i18n'
 
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/components/ui/table'
 import { LoginPage } from '../auth/AuthPages'
 import { getCurrentAccount } from '../auth/api'
 import type { CurrentAccountResponse } from '../auth/api'
@@ -215,64 +228,81 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
       <WorkspaceTitle title={props.translate('account.title')} />
 
       {ownerCanManage ? (
-        <section className="account-section" aria-labelledby="account-create-invite-title">
-          <h3 id="account-create-invite-title">{props.translate('account.createInviteTitle')}</h3>
-          <form
-            className="account-inline-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const values = new FormData(event.currentTarget)
-              const email = fieldValue(values, 'email')
-              if (!email.includes('@')) {
-                setFormStatus(props.translate('account.inviteEmailInvalid'))
-                return
-              }
+        <Card className="account-section" aria-labelledby="account-create-invite-title">
+          <CardHeader>
+            <h3 id="account-create-invite-title">{props.translate('account.createInviteTitle')}</h3>
+          </CardHeader>
+          <CardContent className="account-section-content">
+            <form
+              className="account-inline-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const values = new FormData(event.currentTarget)
+                const email = fieldValue(values, 'email')
+                if (!email.includes('@')) {
+                  setFormStatus(props.translate('account.inviteEmailInvalid'))
+                  return
+                }
 
-              createInviteMutation.mutate(email)
-            }}
-          >
-            <label>
-              <span>{props.translate('account.emailLabel')}</span>
-              <input name="email" type="email" autoComplete="email" />
-            </label>
-            <button type="submit">{props.translate('account.createInviteSubmit')}</button>
-          </form>
-          {formStatus === '' ? null : <p role="status">{formStatus}</p>}
-          {pendingInviteLink === '' ? null : (
-            <div className="account-token-row">
-              <code>{pendingInviteLink}</code>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard
-                    .writeText(pendingInviteLink)
-                    .then(() => setCopyStatus(props.translate('account.copySuccess')))
-                    .catch(() => setCopyStatus(props.translate('account.copyFailed')))
-                }}
-              >
-                {props.translate('account.copyInviteLink')}
-              </button>
-            </div>
-          )}
-          {copyStatus === '' ? null : <p role="status">{copyStatus}</p>}
-        </section>
+                createInviteMutation.mutate(email)
+              }}
+            >
+              <div className="form-field">
+                <Label htmlFor="account-invite-email">
+                  {props.translate('account.emailLabel')}
+                </Label>
+                <Input id="account-invite-email" name="email" type="email" autoComplete="email" />
+              </div>
+              <Button type="submit" disabled={createInviteMutation.isPending}>
+                {props.translate('account.createInviteSubmit')}
+              </Button>
+            </form>
+            {formStatus === '' ? null : <p role="status">{formStatus}</p>}
+            {pendingInviteLink === '' ? null : (
+              <div className="account-token-row">
+                <code>{pendingInviteLink}</code>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(pendingInviteLink)
+                      .then(() => setCopyStatus(props.translate('account.copySuccess')))
+                      .catch(() => setCopyStatus(props.translate('account.copyFailed')))
+                  }}
+                >
+                  {props.translate('account.copyInviteLink')}
+                </Button>
+              </div>
+            )}
+            {copyStatus === '' ? null : <p role="status">{copyStatus}</p>}
+          </CardContent>
+        </Card>
       ) : null}
 
-      <section className="account-section" aria-labelledby="account-members-title">
-        <h3 id="account-members-title">{props.translate('account.membersTitle')}</h3>
-        <MembersTable members={overview.members} translate={props.translate} />
-      </section>
+      <Card className="account-section" aria-labelledby="account-members-title">
+        <CardHeader>
+          <h3 id="account-members-title">{props.translate('account.membersTitle')}</h3>
+        </CardHeader>
+        <CardContent className="account-section-content">
+          <MembersTable members={overview.members} translate={props.translate} />
+        </CardContent>
+      </Card>
 
-      <section className="account-section" aria-labelledby="account-invites-title">
-        <h3 id="account-invites-title">{props.translate('account.invitesTitle')}</h3>
-        <InvitesTable
-          invites={overview.invites}
-          canManage={ownerCanManage}
-          translate={props.translate}
-          revokingInviteID={revokeInviteMutation.variables ?? ''}
-          onRevoke={(inviteId) => revokeInviteMutation.mutate(inviteId)}
-        />
-      </section>
+      <Card className="account-section" aria-labelledby="account-invites-title">
+        <CardHeader>
+          <h3 id="account-invites-title">{props.translate('account.invitesTitle')}</h3>
+        </CardHeader>
+        <CardContent className="account-section-content">
+          <InvitesTable
+            invites={overview.invites}
+            canManage={ownerCanManage}
+            translate={props.translate}
+            revokingInviteID={revokeInviteMutation.variables ?? ''}
+            onRevoke={(inviteId) => revokeInviteMutation.mutate(inviteId)}
+          />
+        </CardContent>
+      </Card>
     </section>
   )
 }
@@ -284,24 +314,26 @@ function MembersTable(props: { members: AccountMember[]; translate: Translate })
 
   return (
     <div className="account-table-wrap">
-      <table className="account-table">
-        <thead>
-          <tr>
-            <th>{props.translate('account.emailHeader')}</th>
-            <th>{props.translate('account.roleHeader')}</th>
-            <th>{props.translate('account.joinedAtHeader')}</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="account-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{props.translate('account.emailHeader')}</TableHead>
+            <TableHead>{props.translate('account.roleHeader')}</TableHead>
+            <TableHead>{props.translate('account.joinedAtHeader')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {props.members.map((member) => (
-            <tr key={member.userId}>
-              <td>{member.email}</td>
-              <td>{props.translate(roleLabelKey(member.role))}</td>
-              <td>{formatDate(member.joinedAt)}</td>
-            </tr>
+            <TableRow key={member.userId}>
+              <TableCell>{member.email}</TableCell>
+              <TableCell>
+                <Badge variant="secondary">{props.translate(roleLabelKey(member.role))}</Badge>
+              </TableCell>
+              <TableCell>{formatDate(member.joinedAt)}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -319,40 +351,50 @@ function InvitesTable(props: {
 
   return (
     <div className="account-table-wrap">
-      <table className="account-table">
-        <thead>
-          <tr>
-            <th>{props.translate('account.emailHeader')}</th>
-            <th>{props.translate('account.roleHeader')}</th>
-            <th>{props.translate('account.statusHeader')}</th>
-            <th>{props.translate('account.expiresAtHeader')}</th>
-            {props.canManage ? <th>{props.translate('account.actionsHeader')}</th> : null}
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="account-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{props.translate('account.emailHeader')}</TableHead>
+            <TableHead>{props.translate('account.roleHeader')}</TableHead>
+            <TableHead>{props.translate('account.statusHeader')}</TableHead>
+            <TableHead>{props.translate('account.expiresAtHeader')}</TableHead>
+            {props.canManage ? (
+              <TableHead>{props.translate('account.actionsHeader')}</TableHead>
+            ) : null}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {props.invites.map((invite) => (
-            <tr key={invite.id}>
-              <td>{invite.email}</td>
-              <td>{props.translate(roleLabelKey(invite.role))}</td>
-              <td>{props.translate(inviteStatusLabelKey(invite.status))}</td>
-              <td>{formatDate(invite.expiresAt)}</td>
+            <TableRow key={invite.id}>
+              <TableCell>{invite.email}</TableCell>
+              <TableCell>
+                <Badge variant="secondary">{props.translate(roleLabelKey(invite.role))}</Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={inviteStatusBadgeVariant(invite.status)}>
+                  {props.translate(inviteStatusLabelKey(invite.status))}
+                </Badge>
+              </TableCell>
+              <TableCell>{formatDate(invite.expiresAt)}</TableCell>
               {props.canManage ? (
-                <td>
+                <TableCell>
                   {invite.status === 'pending' ? (
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
+                      variant="destructive"
                       onClick={() => props.onRevoke(invite.id)}
                       disabled={props.revokingInviteID === invite.id}
                     >
                       {props.translate('account.revokeInvite')}
-                    </button>
+                    </Button>
                   ) : null}
-                </td>
+                </TableCell>
               ) : null}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -379,6 +421,20 @@ function roleLabelKey(role: Role): TranslationKey {
 
 function inviteStatusLabelKey(status: InviteStatus): TranslationKey {
   return `account.inviteStatus.${status}`
+}
+
+function inviteStatusBadgeVariant(
+  status: InviteStatus
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (status === 'pending') {
+    return 'default'
+  }
+
+  if (status === 'revoked' || status === 'expired') {
+    return 'destructive'
+  }
+
+  return 'secondary'
 }
 
 function inviteLink(token: string): string {

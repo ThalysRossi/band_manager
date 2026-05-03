@@ -15,6 +15,7 @@ import { CalendarDays, ChartNoAxesCombined, Package, Store, UserRound } from 'lu
 import type { Locale, TranslationKey } from 'i18n'
 import { translations } from 'i18n'
 
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
 import { LoginPage, SignupPage } from '../features/auth/AuthPages'
 import { getCurrentAccount } from '../features/auth/api'
@@ -295,9 +296,11 @@ function BandContext(props: {
 }) {
   return (
     <div className="band-context">
-      <span className="band-avatar" aria-hidden="true">
-        {bandInitials(props.account.activeBand.bandName)}
-      </span>
+      <Avatar className="band-avatar" aria-hidden="true">
+        <AvatarFallback className="band-avatar-fallback">
+          {bandInitials(props.account.activeBand.bandName)}
+        </AvatarFallback>
+      </Avatar>
       <span className="band-copy">
         <span className="band-name">{props.account.activeBand.bandName}</span>
         <span className="band-meta">

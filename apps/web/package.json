@@ -14,14 +14,20 @@
     "cypress:run": "cypress run"
   },
   "dependencies": {
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
     "@supabase/supabase-js": "^2.105.1",
     "@tanstack/react-query": "5.64.2",
     "@tanstack/react-router": "1.95.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "i18n": "workspace:*",
     "lucide-react": "0.468.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-hook-form": "7.54.2",
+    "tailwind-merge": "^3.5.0",
     "zod": "3.24.1"
   },
   "devDependencies": {

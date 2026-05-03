@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setMockCurrentAccountRole } from '../test/apiMocks'
 import { App } from './App'
 
 const supabaseMock = vi.hoisted(() => {
@@ -39,7 +40,6 @@ describe('App', () => {
     supabaseMock.signUp.mockReset()
     supabaseMock.unsubscribe.mockReset()
     supabaseMock.getSession.mockResolvedValue({ data: { session: null } })
-    vi.stubGlobal('fetch', vi.fn(accountFetch))
     vi.stubGlobal('crypto', {
       randomUUID: () => 'test-idempotency-key'
     })
@@ -140,7 +140,7 @@ describe('App', () => {
 
   it('hides invite mutation controls for a viewer', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
-    vi.stubGlobal('fetch', vi.fn(viewerAccountFetch))
+    setMockCurrentAccountRole('viewer')
     window.history.pushState({}, '', '/account')
 
     render(<App />)
@@ -214,140 +214,4 @@ function authenticatedSession() {
       }
     }
   }
-}
-
-async function accountFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const url = requestURL(input)
-  const method = init?.method ?? 'GET'
-
-  if (url.endsWith('/me')) {
-    return jsonResponse(currentAccountResponse('owner'), 200)
-  }
-
-  if (url.endsWith('/account/members')) {
-    return jsonResponse(
-      {
-        members: [
-          {
-            userId: '00000000-0000-0000-0000-000000000001',
-            email: 'owner@example.com',
-            bandId: '00000000-0000-0000-0000-000000000002',
-            role: 'owner',
-            joinedAt: '2026-05-01T12:00:00Z'
-          }
-        ]
-      },
-      200
-    )
-  }
-
-  if (url.endsWith('/account/invites') && method === 'GET') {
-    return jsonResponse(
-      {
-        invites: [
-          {
-            id: '11111111-1111-1111-1111-111111111111',
-            email: 'viewer@example.com',
-            role: 'viewer',
-            status: 'pending',
-            expiresAt: '2026-05-08T12:00:00Z',
-            createdAt: '2026-05-01T12:00:00Z',
-            updatedAt: '2026-05-01T12:00:00Z'
-          }
-        ]
-      },
-      200
-    )
-  }
-
-  if (url.endsWith('/account/invites') && method === 'POST') {
-    return jsonResponse(
-      {
-        id: '22222222-2222-2222-2222-222222222222',
-        email: 'new-viewer@example.com',
-        role: 'viewer',
-        status: 'pending',
-        expiresAt: '2026-05-08T12:00:00Z',
-        createdAt: '2026-05-01T12:00:00Z',
-        updatedAt: '2026-05-01T12:00:00Z',
-        token: 'token_new_viewer'
-      },
-      201
-    )
-  }
-
-  if (url.endsWith('/account/invites/accept') && method === 'POST') {
-    return jsonResponse(
-      {
-        userId: '00000000-0000-0000-0000-000000000003',
-        email: 'viewer@example.com',
-        bandId: '00000000-0000-0000-0000-000000000002',
-        role: 'viewer',
-        joinedAt: '2026-05-01T12:00:00Z'
-      },
-      200
-    )
-  }
-
-  if (url.endsWith('/account/invites/11111111-1111-1111-1111-111111111111/revoke')) {
-    return jsonResponse(
-      {
-        id: '11111111-1111-1111-1111-111111111111',
-        email: 'viewer@example.com',
-        role: 'viewer',
-        status: 'revoked',
-        expiresAt: '2026-05-08T12:00:00Z',
-        createdAt: '2026-05-01T12:00:00Z',
-        updatedAt: '2026-05-01T12:00:00Z'
-      },
-      200
-    )
-  }
-
-  return jsonResponse({ message: 'not found' }, 404)
-}
-
-async function viewerAccountFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const url = requestURL(input)
-  if (url.endsWith('/me')) {
-    return jsonResponse(currentAccountResponse('viewer'), 200)
-  }
-
-  return accountFetch(input, init)
-}
-
-function currentAccountResponse(role: 'owner' | 'viewer') {
-  return {
-    user: {
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'owner@example.com'
-    },
-    activeBand: {
-      bandId: '00000000-0000-0000-0000-000000000002',
-      bandName: 'Os Testes',
-      role,
-      canWrite: role === 'owner'
-    }
-  }
-}
-
-function requestURL(input: RequestInfo | URL): string {
-  if (typeof input === 'string') {
-    return input
-  }
-
-  if (input instanceof URL) {
-    return input.toString()
-  }
-
-  return input.url
-}
-
-function jsonResponse(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   Link,
@@ -7,29 +8,36 @@ import {
   createRoute,
   createRouter
 } from '@tanstack/react-router'
-import { CalendarDays, ChartNoAxesCombined, Package, Store } from 'lucide-react'
+import { CalendarDays, ChartNoAxesCombined, Package, Store, UserRound } from 'lucide-react'
 import type { Locale, TranslationKey } from 'i18n'
 import { translations } from 'i18n'
 
+import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
 import { LoginPage, SignupPage } from '../features/auth/AuthPages'
+import { AuthSessionProvider } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
 
 type NavigationItem = {
   key: NavigationLabelKey
-  href: '/' | '/merch-booth' | '/financial-reports' | '/calendar'
+  href: '/' | '/merch-booth' | '/financial-reports' | '/calendar' | '/account'
   icon: typeof Package
 }
 
-type NavigationLabelKey = 'nav.inventory' | 'nav.merchBooth' | 'nav.reports' | 'nav.calendar'
+type NavigationLabelKey =
+  | 'nav.inventory'
+  | 'nav.merchBooth'
+  | 'nav.reports'
+  | 'nav.calendar'
+  | 'nav.account'
 
 const navigationItems: NavigationItem[] = [
   { key: 'nav.inventory', href: '/', icon: Package },
   { key: 'nav.merchBooth', href: '/merch-booth', icon: Store },
   { key: 'nav.reports', href: '/financial-reports', icon: ChartNoAxesCombined },
-  { key: 'nav.calendar', href: '/calendar', icon: CalendarDays }
+  { key: 'nav.calendar', href: '/calendar', icon: CalendarDays },
+  { key: 'nav.account', href: '/account', icon: UserRound }
 ]
 
-const queryClient = new QueryClient()
 const rootRoute = createRootRoute({ component: RootLayout })
 
 const inventoryRoute = createRoute({
@@ -56,6 +64,23 @@ const calendarRoute = createRoute({
   component: CalendarPage
 })
 
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  component: AccountRoutePage
+})
+
+const acceptInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account/invites/accept',
+  validateSearch: (search: Record<string, unknown>): { token: string } => {
+    return {
+      token: typeof search.token === 'string' ? search.token : ''
+    }
+  },
+  component: AcceptInviteRoutePage
+})
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
@@ -73,6 +98,8 @@ const routeTree = rootRoute.addChildren([
   merchBoothRoute,
   financialReportsRoute,
   calendarRoute,
+  accountRoute,
+  acceptInviteRoute,
   loginRoute,
   signupRoute
 ])
@@ -86,9 +113,13 @@ declare module '@tanstack/react-router' {
 }
 
 export function App() {
+  const [queryClient] = useState(() => new QueryClient())
+
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthSessionProvider>
+        <RouterProvider router={router} />
+      </AuthSessionProvider>
     </QueryClientProvider>
   )
 }
@@ -137,6 +168,19 @@ function FinancialReportsPage() {
 
 function CalendarPage() {
   return <WorkspaceHeader titleKey="nav.calendar" />
+}
+
+function AccountRoutePage() {
+  const translate = useTranslate()
+
+  return <AccountPage translate={translate} />
+}
+
+function AcceptInviteRoutePage() {
+  const translate = useTranslate()
+  const search = acceptInviteRoute.useSearch()
+
+  return <AcceptInvitePage translate={translate} token={search.token} />
 }
 
 function LoginRoutePage() {

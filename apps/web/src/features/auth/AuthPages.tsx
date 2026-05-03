@@ -2,11 +2,13 @@ import { useState } from 'react'
 import type { TranslationKey } from 'i18n'
 
 import { login, signupOwner } from './api'
+import type { CurrentAccountResponse } from './api'
 
 type Translate = (key: TranslationKey) => string
 
 type AuthPageProps = {
   translate: Translate
+  onLoginSuccess?: (account: CurrentAccountResponse) => void
 }
 
 export function LoginPage(props: AuthPageProps) {
@@ -23,7 +25,12 @@ export function LoginPage(props: AuthPageProps) {
             email: fieldValue(values, 'email'),
             password: fieldValue(values, 'password')
           })
-            .then(() => setStatus(props.translate('auth.loginReady')))
+            .then((account) => {
+              setStatus(props.translate('auth.loginReady'))
+              if (props.onLoginSuccess !== undefined) {
+                props.onLoginSuccess(account)
+              }
+            })
             .catch(() => setStatus(props.translate('auth.genericError')))
         }}
       >

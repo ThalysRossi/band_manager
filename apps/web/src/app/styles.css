@@ -125,13 +125,126 @@ a {
   font-weight: 650;
 }
 
+.account-layout {
+  display: grid;
+  gap: 24px;
+}
+
+.account-section {
+  display: grid;
+  gap: 12px;
+}
+
+.account-section h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.account-muted,
+.account-section p {
+  margin: 0;
+  color: #596157;
+}
+
+.account-inline-form {
+  display: grid;
+  gap: 12px;
+}
+
+.account-inline-form label {
+  display: grid;
+  gap: 6px;
+  color: #3c453b;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.account-inline-form input {
+  min-height: 44px;
+  border: 1px solid #c8c9bf;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #fffffc;
+  color: #17201a;
+  font: inherit;
+}
+
+.account-inline-form button,
+.account-token-row button,
+.account-table button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #11785b;
+  color: #fffffc;
+  font: inherit;
+  font-weight: 750;
+}
+
+.account-table button {
+  background: #7d2f2f;
+}
+
+.account-table button:disabled {
+  opacity: 0.58;
+}
+
+.account-token-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-token-row code {
+  overflow-wrap: anywhere;
+  border: 1px solid #d7d8d0;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fffffc;
+  color: #17201a;
+  font-size: 0.8125rem;
+}
+
+.account-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #deded6;
+  border-radius: 6px;
+  background: #fffffc;
+}
+
+.account-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.account-table th,
+.account-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #ecece6;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.account-table th {
+  color: #3c453b;
+  font-weight: 750;
+}
+
+.account-table tr:last-child td {
+  border-bottom: 0;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 64px;
   border-top: 1px solid #deded6;
   background: rgba(255, 255, 252, 0.96);
@@ -197,5 +310,10 @@ a {
     padding: 0 12px;
     border-radius: 6px;
     place-items: center start;
+  }
+
+  .account-inline-form,
+  .account-token-row {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

@@ -1,4 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
+import { apiRequest } from '../../shared/api/client'
+import { createSupabaseClient } from '../../shared/auth/supabase'
 
 export type SignupOwnerValues = {
   email: string
@@ -12,7 +13,7 @@ export type LoginValues = {
   password: string
 }
 
-type CurrentAccountResponse = {
+export type CurrentAccountResponse = {
   user: {
     id: string
     email: string
@@ -55,65 +56,38 @@ export async function login(values: LoginValues): Promise<CurrentAccountResponse
     throw new Error(authResult.error.message)
   }
 
-  const accessToken = authResult.data.session.access_token
+  const session = authResult.data.session
+  if (session === null) {
+    throw new Error('Authenticated session is required')
+  }
+
+  const accessToken = session.access_token
   return getCurrentAccount(accessToken)
+}
+
+export async function getCurrentAccount(accessToken: string): Promise<CurrentAccountResponse> {
+  return apiRequest<CurrentAccountResponse>({
+    accessToken,
+    path: '/me',
+    method: 'GET',
+    body: null,
+    idempotent: false
+  })
 }
 
 async function createOwnerAccount(
   accessToken: string,
   values: SignupOwnerValues
 ): Promise<CurrentAccountResponse> {
-  const response = await fetch(`${apiBaseURL()}/auth/signup`, {
+  return apiRequest<CurrentAccountResponse>({
+    accessToken,
+    path: '/auth/signup',
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'Idempotency-Key': crypto.randomUUID()
-    },
-    body: JSON.stringify({
+    body: {
       email: values.email,
       bandName: values.bandName,
       bandTimezone: values.bandTimezone
-    })
+    },
+    idempotent: true
   })
-
-  return parseAccountResponse(response)
-}
-
-async function getCurrentAccount(accessToken: string): Promise<CurrentAccountResponse> {
-  const response = await fetch(`${apiBaseURL()}/me`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  })
-
-  return parseAccountResponse(response)
-}
-
-async function parseAccountResponse(response: Response): Promise<CurrentAccountResponse> {
-  if (!response.ok) {
-    const body = await response.json()
-    throw new Error(body.message)
-  }
-
-  return response.json()
-}
-
-function apiBaseURL(): string {
-  return requiredEnv('VITE_API_BASE_URL')
-}
-
-function createSupabaseClient() {
-  return createClient(requiredEnv('VITE_SUPABASE_URL'), requiredEnv('VITE_SUPABASE_ANON_KEY'))
-}
-
-function requiredEnv(
-  key: 'VITE_API_BASE_URL' | 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_ANON_KEY'
-): string {
-  const value = import.meta.env[key]
-  if (value === undefined || value.trim() === '') {
-    throw new Error(`${key} is required`)
-  }
-
-  return value
 }

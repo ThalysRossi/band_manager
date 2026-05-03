@@ -9,6 +9,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useLocation,
   useNavigate
 } from '@tanstack/react-router'
 import { CalendarDays, ChartNoAxesCombined, Package, Store, UserRound } from 'lucide-react'
@@ -37,6 +38,12 @@ type NavigationLabelKey =
   | 'nav.account'
 
 type ProtectedRoutePath = NavigationItem['href']
+
+type HeaderLabelKey =
+  | NavigationLabelKey
+  | 'auth.loginTitle'
+  | 'auth.signupTitle'
+  | 'account.acceptTitle'
 
 const navigationItems: NavigationItem[] = [
   { key: 'nav.inventory', href: '/', icon: Package },
@@ -140,12 +147,15 @@ export function App() {
 function RootLayout() {
   const locale = detectLocale(window.navigator.language)
   const translate = createTranslator(locale)
+  const location = useLocation()
+  const headerLabelKey = headerLabelForPath(location.pathname)
 
   return (
     <main className="app-shell">
       <header className="top-bar">
         <div className="brand-lockup">
           <h1>{translate('app.title')}</h1>
+          <p>{translate(headerLabelKey)}</p>
         </div>
         <HeaderAccountSummary translate={translate} />
       </header>
@@ -372,4 +382,27 @@ function parseProtectedRoutePath(value: unknown): ProtectedRoutePath {
   }
 
   return matchingItem.href
+}
+
+function headerLabelForPath(pathname: string): HeaderLabelKey {
+  if (pathname === '/login') {
+    return 'auth.loginTitle'
+  }
+
+  if (pathname === '/signup') {
+    return 'auth.signupTitle'
+  }
+
+  if (pathname.startsWith('/account/invites/accept')) {
+    return 'account.acceptTitle'
+  }
+
+  const matchingItem = navigationItems
+    .filter((item) => item.href !== '/')
+    .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+  if (matchingItem !== undefined) {
+    return matchingItem.key
+  }
+
+  return 'nav.inventory'
 }

@@ -57,6 +57,7 @@ describe('App', () => {
     render(<App />)
 
     expect(screen.getByRole('heading', { name: 'Band Manager' })).toBeInTheDocument()
+    expect(screen.getAllByText('Inventory')).toHaveLength(2)
     expect(screen.getByRole('link', { name: /Inventory/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Merch Booth/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Account/i })).toBeInTheDocument()
@@ -82,6 +83,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
+    expect(screen.getAllByText('Merch Booth')).toHaveLength(3)
     expect(screen.getByText('Backend foundation is ready')).toBeInTheDocument()
     expect(await screen.findByText('Os Testes')).toBeInTheDocument()
     expect(screen.getByText('owner@example.com | Owner')).toBeInTheDocument()
@@ -121,6 +123,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Create band account' })).toBeInTheDocument()
+    expect(screen.getAllByText('Create band account')).toHaveLength(2)
     expect(screen.getByText(/really_awesome_band@email.com/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create owner account' })).toBeInTheDocument()
   })

@@ -121,6 +121,16 @@ a {
   font-weight: 700;
 }
 
+.brand-lockup p {
+  margin: 0;
+  color: var(--copy-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .top-bar-status {
   margin: 0;
   color: var(--copy-muted);

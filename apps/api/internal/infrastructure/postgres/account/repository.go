@@ -19,7 +19,7 @@ import (
 	"github.com/thalys/band-manager/apps/api/internal/domain/permissions"
 )
 
-const signupOperation = "auth_signup"
+const onboardingOperation = "account_onboarding"
 const uniqueViolationCode = "23505"
 
 type Repository struct {
@@ -119,23 +119,23 @@ func (repository Repository) CreateOwnerAccount(ctx context.Context, command acc
 
 	responseBody, err := json.Marshal(account)
 	if err != nil {
-		return accounts.OwnerAccount{}, fmt.Errorf("marshal idempotent signup response user_id=%q band_id=%q: %w", userID, bandID, err)
+		return accounts.OwnerAccount{}, fmt.Errorf("marshal idempotent onboarding response user_id=%q band_id=%q: %w", userID, bandID, err)
 	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO idempotency_records (id, scope_id, band_id, operation, idempotency_key, request_hash, response_body, status_code, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, idempotencyRecordID, command.AuthProviderUserID, bandID, signupOperation, command.IdempotencyKey, requestHash, responseBody, 201, command.CreatedAt.Add(15*time.Minute), command.CreatedAt)
+	`, idempotencyRecordID, command.AuthProviderUserID, bandID, onboardingOperation, command.IdempotencyKey, requestHash, responseBody, 201, command.CreatedAt.Add(15*time.Minute), command.CreatedAt)
 	if err != nil {
-		return accounts.OwnerAccount{}, fmt.Errorf("insert signup idempotency record scope_id=%q key=%q: %w", command.AuthProviderUserID, command.IdempotencyKey, err)
+		return accounts.OwnerAccount{}, fmt.Errorf("insert onboarding idempotency record scope_id=%q key=%q: %w", command.AuthProviderUserID, command.IdempotencyKey, err)
 	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO audit_logs (id, user_id, band_id, action, entity_type, entity_id, request_id, idempotency_key, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-	`, auditLogID, userID, bandID, "auth.signup_owner", "band", bandID, command.RequestID, command.IdempotencyKey, command.CreatedAt)
+	`, auditLogID, userID, bandID, "account.onboarding_completed", "band", bandID, command.RequestID, command.IdempotencyKey, command.CreatedAt)
 	if err != nil {
-		return accounts.OwnerAccount{}, fmt.Errorf("insert owner signup audit log user_id=%q band_id=%q: %w", userID, bandID, err)
+		return accounts.OwnerAccount{}, fmt.Errorf("insert owner onboarding audit log user_id=%q band_id=%q: %w", userID, bandID, err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -157,6 +157,9 @@ func (repository Repository) GetCurrentAccount(ctx context.Context, query accoun
 	`, query.AuthProvider, query.AuthProviderUserID)
 
 	account, err := scanCurrentAccount(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return accounts.OwnerAccount{}, accounts.ErrAccountNotFound
+	}
 	if err != nil {
 		return accounts.OwnerAccount{}, fmt.Errorf("query current account provider=%q provider_user_id=%q: %w", query.AuthProvider, query.AuthProviderUserID, err)
 	}
@@ -409,21 +412,21 @@ func findIdempotentSignup(ctx context.Context, tx pgx.Tx, scopeID string, idempo
 		SELECT request_hash, response_body
 		FROM idempotency_records
 		WHERE scope_id = $1 AND operation = $2 AND idempotency_key = $3 AND expires_at > NOW()
-	`, scopeID, signupOperation, idempotencyKey).Scan(&storedRequestHash, &responseBody)
+	`, scopeID, onboardingOperation, idempotencyKey).Scan(&storedRequestHash, &responseBody)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return accounts.OwnerAccount{}, false, nil
 	}
 	if err != nil {
-		return accounts.OwnerAccount{}, false, fmt.Errorf("query signup idempotency record scope_id=%q key=%q: %w", scopeID, idempotencyKey, err)
+		return accounts.OwnerAccount{}, false, fmt.Errorf("query onboarding idempotency record scope_id=%q key=%q: %w", scopeID, idempotencyKey, err)
 	}
 
 	if storedRequestHash != requestHash {
-		return accounts.OwnerAccount{}, false, fmt.Errorf("idempotency key %q was already used with a different signup request", idempotencyKey)
+		return accounts.OwnerAccount{}, false, fmt.Errorf("idempotency key %q was already used with a different onboarding request", idempotencyKey)
 	}
 
 	var account accounts.OwnerAccount
 	if err := json.Unmarshal(responseBody, &account); err != nil {
-		return accounts.OwnerAccount{}, false, fmt.Errorf("parse idempotent signup response scope_id=%q key=%q: %w", scopeID, idempotencyKey, err)
+		return accounts.OwnerAccount{}, false, fmt.Errorf("parse idempotent onboarding response scope_id=%q key=%q: %w", scopeID, idempotencyKey, err)
 	}
 
 	return account, true, nil
@@ -444,7 +447,7 @@ func hashSignupRequest(command accounts.CreateOwnerAccountCommand) (string, erro
 		BandTimezone:       command.BandTimezone,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal signup request hash body: %w", err)
+		return "", fmt.Errorf("marshal onboarding request hash body: %w", err)
 	}
 
 	hash := sha256.Sum256(body)

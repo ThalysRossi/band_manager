@@ -1,8 +1,8 @@
 # Supabase setup
 
 This project uses Supabase Auth for browser login/signup. The Go API validates
-Supabase access tokens with the Supabase JWT secret and stores application data
-in PostgreSQL through `DATABASE_URL`.
+Supabase access tokens against the project's JWKS signing keys and stores
+application data in PostgreSQL through `DATABASE_URL`.
 
 ## Create the Supabase project
 
@@ -10,13 +10,16 @@ in PostgreSQL through `DATABASE_URL`.
 2. Open **Project Settings > API** and copy:
    - Project URL
    - anon public key
-   - JWT secret
 3. Open **Project Settings > Database** and copy the PostgreSQL connection
    string if you want to use Supabase Postgres instead of local Docker
    Postgres.
 
-Do not put the service role key in frontend environment variables. The current
-runtime only needs the frontend anon key and the backend JWT secret.
+Do not copy the legacy JWT secret or service role key into this application.
+The frontend and backend use the anon key, while the backend verifies access
+tokens using `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`.
+Before onboarding or accepting an invite, the backend also checks
+`${SUPABASE_URL}/auth/v1/user` and refuses to persist application records until
+the email is verified.
 
 ## Auth settings
 
@@ -24,14 +27,13 @@ In **Authentication > Providers**:
 
 - Enable Email provider.
 - Enable email/password signups.
+- Require email confirmation in every environment.
 - For local development, use `http://localhost:5173` as the site URL.
-- Add `http://localhost:5173/*` to redirect URLs.
+- Add `http://localhost:5173/auth/callback` to redirect URLs.
+- Add the deployed `/auth/callback` URL after the hosting provider and domain
+  are selected.
 
-Email confirmation may be enabled or disabled for local development. When it is
-enabled, owner signup can return the frontend's "check your email" state until
-the account is verified and the user logs in again.
-
-## Local frontend environment
+Google OAuth is deferred. Do not create a Google OAuth client yet.
 
 Create `apps/web/.env.local`:
 
@@ -45,7 +47,7 @@ The `VITE_` variables are browser-exposed. Only use the anon public key there.
 
 ## Local API environment
 
-Run the API with the same JWT secret Supabase uses to sign access tokens:
+Run the API with the Supabase project URL and anon key:
 
 ```bash
 APP_ENV=local \
@@ -53,7 +55,8 @@ API_ADDR=:8080 \
 API_ALLOWED_ORIGINS=http://localhost:5173 \
 DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable \
 REDIS_URL=redis://localhost:6379/0 \
-SUPABASE_JWT_SECRET=your-supabase-jwt-secret \
+SUPABASE_URL=https://your-project.supabase.co \
+SUPABASE_ANON_KEY=your-anon-key \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
 MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 MERCADOPAGO_POINT_TERMINAL_ID=replace-me \
@@ -69,10 +72,11 @@ numeric order before using the app.
 1. Start local dependencies and the API.
 2. Start the web app.
 3. Visit `http://localhost:5173/signup`.
-4. Create an owner account with the same email used in Supabase Auth.
-5. Log in and open `/account`.
+4. Create an account and confirm the email.
+5. Follow the callback, complete band onboarding, and open `/account`.
 6. Create a viewer invite and copy the invite link.
 7. Log in as the invited email and open the invite link to accept it.
 
-If protected API calls return `401`, verify that `SUPABASE_JWT_SECRET` matches
-the Supabase project's JWT secret, not the anon key.
+If protected API calls return `401`, verify `SUPABASE_URL`, confirm the project
+uses asymmetric signing keys exposed by JWKS, and inspect the API logs for
+issuer, audience, expiry, or key-ID validation failures.

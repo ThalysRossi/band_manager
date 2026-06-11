@@ -23,6 +23,7 @@ var (
 	ErrInviteRevoked          = errors.New("invite revoked")
 	ErrInviteAccepted         = errors.New("invite already accepted")
 	ErrMembershipConflict     = errors.New("membership conflict")
+	ErrAccountNotFound        = errors.New("account not found")
 )
 
 type BandAccountRepository interface {

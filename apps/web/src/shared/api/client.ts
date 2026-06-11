@@ -10,6 +10,17 @@ type ApiRequest = {
   idempotent: boolean
 }
 
+export class ApiError extends Error {
+  readonly statusCode: number
+  readonly code: string
+
+  constructor(statusCode: number, code: string, message: string) {
+    super(message)
+    this.statusCode = statusCode
+    this.code = code
+  }
+}
+
 export async function apiRequest<TResponse>(request: ApiRequest): Promise<TResponse> {
   const headers = requestHeaders(request.accessToken, request.idempotent)
   const response = await fetch(`${apiBaseURL()}${request.path}`, {
@@ -28,10 +39,17 @@ export function apiBaseURL(): string {
 async function parseJSONResponse<TResponse>(response: Response): Promise<TResponse> {
   const body = await response.json()
   if (!response.ok) {
-    throw new Error(errorMessage(body))
+    throw new ApiError(response.status, errorCode(body), errorMessage(body))
   }
 
   return body as TResponse
+}
+
+function errorCode(body: unknown): string {
+  if (typeof body !== 'object' || body === null || !('code' in body)) {
+    return 'api_request_failed'
+  }
+  return typeof body.code === 'string' ? body.code : 'api_request_failed'
 }
 
 function errorMessage(body: unknown): string {

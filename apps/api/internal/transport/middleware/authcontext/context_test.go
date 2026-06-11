@@ -26,6 +26,7 @@ func TestFromContextReturnsAuthContext(t *testing.T) {
 	expected := Context{
 		UserID: "user_1",
 		BandID: "band_1",
+		Email:  "band@example.com",
 		Role:   permissions.RoleOwner,
 	}
 

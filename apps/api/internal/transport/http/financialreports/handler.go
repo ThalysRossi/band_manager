@@ -7,18 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
 	applicationfinancialreports "github.com/thalys/band-manager/apps/api/internal/application/financialreports"
-	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	authhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
+	"github.com/thalys/band-manager/apps/api/internal/transport/middleware/authcontext"
 )
 
 type Handler struct {
-	authenticator     session.Authenticator
-	accountRepository accounts.BandAccountRepository
-	reportRepository  applicationfinancialreports.Repository
-	logger            *slog.Logger
-	now               func() time.Time
+	reportRepository applicationfinancialreports.Repository
+	logger           *slog.Logger
+	now              func() time.Time
 }
 
 type FinancialReportResponse struct {
@@ -92,13 +89,11 @@ type SignedMoneyResponse struct {
 	Currency string `json:"currency"`
 }
 
-func NewHandler(authenticator session.Authenticator, accountRepository accounts.BandAccountRepository, reportRepository applicationfinancialreports.Repository, logger *slog.Logger) Handler {
+func NewHandler(reportRepository applicationfinancialreports.Repository, logger *slog.Logger) Handler {
 	return Handler{
-		authenticator:     authenticator,
-		accountRepository: accountRepository,
-		reportRepository:  reportRepository,
-		logger:            logger,
-		now:               time.Now,
+		reportRepository: reportRepository,
+		logger:           logger,
+		now:              time.Now,
 	}
 }
 
@@ -123,43 +118,18 @@ func (handler Handler) GetFinancialReport(response http.ResponseWriter, request 
 }
 
 func (handler Handler) accountContext(response http.ResponseWriter, request *http.Request) (applicationfinancialreports.AccountContext, bool) {
-	authenticatedUser, ok := handler.authenticate(response, request)
+	context, ok := authcontext.FromContext(request.Context())
 	if !ok {
-		return applicationfinancialreports.AccountContext{}, false
-	}
-
-	account, err := accounts.GetCurrentAccount(request.Context(), handler.accountRepository, accounts.CurrentAccountQuery{
-		AuthProvider:       authenticatedUser.Provider,
-		AuthProviderUserID: authenticatedUser.ProviderUserID,
-	})
-	if err != nil {
-		handler.logger.Warn("financial report account lookup failed", "error", err, "provider", authenticatedUser.Provider, "provider_user_id", authenticatedUser.ProviderUserID)
-		handler.writeError(response, http.StatusUnauthorized, "account_not_found", "Authenticated user is not linked to a band account")
+		handler.writeError(response, http.StatusInternalServerError, "missing_account_context", "Account context is missing")
 		return applicationfinancialreports.AccountContext{}, false
 	}
 
 	return applicationfinancialreports.AccountContext{
-		UserID:       account.UserID,
-		BandID:       account.BandID,
-		BandTimezone: account.BandTimezone,
-		Role:         account.Role,
+		UserID:       context.UserID,
+		BandID:       context.BandID,
+		BandTimezone: context.BandTimezone,
+		Role:         context.Role,
 	}, true
-}
-
-func (handler Handler) authenticate(response http.ResponseWriter, request *http.Request) (session.AuthenticatedUser, bool) {
-	token, err := session.NormalizeBearerToken(request.Header.Get("Authorization"))
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_authorization", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	authenticatedUser, err := handler.authenticator.Authenticate(request.Context(), token)
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_session", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	return authenticatedUser, true
 }
 
 func (handler Handler) writeFinancialReportError(response http.ResponseWriter, err error) {

@@ -7,16 +7,28 @@ type MockCurrentAccountRole = Extract<Role, 'owner' | 'viewer'>
 
 type MockAPIState = {
   currentAccountRole: MockCurrentAccountRole
+  currentAccountExists: boolean
 }
 
 const apiBaseURL = 'http://localhost:8080'
 
 const mockAPIState: MockAPIState = {
-  currentAccountRole: 'owner'
+  currentAccountRole: 'owner',
+  currentAccountExists: true
 }
 
 export const apiHandlers = [
   http.get(`${apiBaseURL}/me`, () => {
+    if (!mockAPIState.currentAccountExists) {
+      return HttpResponse.json(
+        {
+          code: 'account_not_found',
+          message: 'Authenticated user has not completed onboarding'
+        },
+        { status: 404 }
+      )
+    }
+
     return HttpResponse.json(currentAccountResponse(mockAPIState.currentAccountRole), {
       status: 200
     })
@@ -40,10 +52,15 @@ export const apiHandlers = [
 
 export function resetAPIMocks(): void {
   mockAPIState.currentAccountRole = 'owner'
+  mockAPIState.currentAccountExists = true
 }
 
 export function setMockCurrentAccountRole(role: MockCurrentAccountRole): void {
   mockAPIState.currentAccountRole = role
+}
+
+export function setMockCurrentAccountExists(exists: boolean): void {
+  mockAPIState.currentAccountExists = exists
 }
 
 function currentAccountResponse(role: MockCurrentAccountRole): CurrentAccountResponse {

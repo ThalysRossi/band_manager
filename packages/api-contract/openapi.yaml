@@ -16,10 +16,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-  /auth/signup:
+  /account/onboarding:
     post:
-      operationId: signupOwner
-      summary: Create the alpha owner account and band
+      operationId: onboardOwner
+      summary: Create the verified user's owner account and band
       security:
         - bearerAuth: []
       parameters:
@@ -29,16 +29,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignupOwnerRequest'
+              $ref: '#/components/schemas/OnboardOwnerRequest'
       responses:
         '201':
-          description: Owner account created
+          description: Owner account and band created
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentAccountResponse'
         '400':
-          description: Invalid signup request
+          description: Invalid onboarding request
           content:
             application/json:
               schema:
@@ -51,6 +51,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Email is not verified or provider identity does not match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Identity provider could not inspect the verified user
           content:
             application/json:
               schema:
@@ -70,6 +82,12 @@ paths:
                 $ref: '#/components/schemas/CurrentAccountResponse'
         '401':
           description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user has not completed onboarding
           content:
             application/json:
               schema:
@@ -246,6 +264,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Email is not verified or provider identity does not match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Invite token not found
           content:
@@ -254,6 +278,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Existing membership conflicts with invite acceptance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Identity provider could not inspect the verified user
           content:
             application/json:
               schema:
@@ -1081,17 +1111,12 @@ components:
           type: string
           enum:
             - ok
-    SignupOwnerRequest:
+    OnboardOwnerRequest:
       type: object
       required:
-        - email
         - bandName
         - bandTimezone
       properties:
-        email:
-          type: string
-          format: email
-          example: really_awesome_band@email.com
         bandName:
           type: string
           minLength: 1

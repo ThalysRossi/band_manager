@@ -109,6 +109,33 @@ func TestFinancialReportsRouteRejectsUnauthenticatedRequest(t *testing.T) {
 	}
 }
 
+func TestCurrentAccountRouteReturnsNotFoundBeforeOnboarding(t *testing.T) {
+	t.Parallel()
+
+	dependencies := testDependencies()
+	dependencies.AccountRepository = testAccountRepository{err: accounts.ErrAccountNotFound}
+	router := NewRouter(testConfig(), slog.Default(), dependencies)
+	request := httptest.NewRequest(http.MethodGet, "/me", nil)
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
+	}
+
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode authentication error response: %v", err)
+	}
+	if body.Code != "account_not_found" {
+		t.Fatalf("expected account_not_found code, got %q", body.Code)
+	}
+}
+
 func TestFinancialReportsRouteRejectsInvalidQueryParams(t *testing.T) {
 	t.Parallel()
 
@@ -326,6 +353,42 @@ func TestAccountInviteAcceptRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestAccountOnboardingRejectsUnverifiedEmail(t *testing.T) {
+	t.Parallel()
+
+	dependencies := testDependencies()
+	dependencies.VerifiedUserInspector = testVerifiedUserInspector{err: session.ErrEmailNotVerified}
+	router := NewRouter(testConfig(), slog.Default(), dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/account/onboarding", strings.NewReader(`{"bandName":"Os Testes","bandTimezone":"America/Recife"}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_onboarding")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, response.Code)
+	}
+}
+
+func TestAccountInviteAcceptReturnsBadGatewayWhenIdentityProviderFails(t *testing.T) {
+	t.Parallel()
+
+	dependencies := testDependencies()
+	dependencies.VerifiedUserInspector = testVerifiedUserInspector{err: errors.New("supabase unavailable")}
+	router := NewRouter(testConfig(), slog.Default(), dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/account/invites/accept", strings.NewReader(`{"token":"token_accept"}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	request.Header.Set("Idempotency-Key", "idem_account_invite_accept")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("expected status %d, got %d", http.StatusBadGateway, response.Code)
+	}
+}
+
 func testConfig() config.Config {
 	return config.Config{
 		Environment:                "test",
@@ -333,7 +396,8 @@ func testConfig() config.Config {
 		AllowedOrigins:             []string{"http://localhost:5173"},
 		DatabaseURL:                "postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable",
 		RedisURL:                   "redis://localhost:6379/0",
-		SupabaseJWTSecret:          "secret",
+		SupabaseURL:                "https://example.supabase.co",
+		SupabaseAnonKey:            "anon-key",
 		MercadoPagoAccessToken:     "token",
 		MercadoPagoWebhookSecret:   "webhook_secret",
 		MercadoPagoPointTerminalID: "terminal",
@@ -356,6 +420,7 @@ func (authenticator testAuthenticator) Authenticate(ctx context.Context, bearerT
 
 type testAccountRepository struct {
 	role permissions.Role
+	err  error
 }
 
 func (repository testAccountRepository) CreateOwnerAccount(ctx context.Context, command accounts.CreateOwnerAccountCommand) (accounts.OwnerAccount, error) {
@@ -363,6 +428,10 @@ func (repository testAccountRepository) CreateOwnerAccount(ctx context.Context, 
 }
 
 func (repository testAccountRepository) GetCurrentAccount(ctx context.Context, query accounts.CurrentAccountQuery) (accounts.OwnerAccount, error) {
+	if repository.err != nil {
+		return accounts.OwnerAccount{}, repository.err
+	}
+
 	role := repository.role
 	if role == "" {
 		role = permissions.RoleViewer
@@ -620,6 +689,7 @@ func (repository testCalendarRepository) SoftDeleteEvent(ctx context.Context, co
 func testDependencies() Dependencies {
 	return Dependencies{
 		Authenticator:              testAuthenticator{},
+		VerifiedUserInspector:      testVerifiedUserInspector{},
 		AccountRepository:          testAccountRepository{},
 		InventoryRepository:        testInventoryRepository{},
 		MerchBoothRepository:       testMerchBoothRepository{},
@@ -627,6 +697,22 @@ func testDependencies() Dependencies {
 		CalendarRepository:         testCalendarRepository{},
 		PaymentProvider:            testPaymentProvider{},
 	}
+}
+
+type testVerifiedUserInspector struct {
+	err error
+}
+
+func (inspector testVerifiedUserInspector) InspectVerifiedUser(ctx context.Context, bearerToken string) (session.VerifiedUser, error) {
+	if inspector.err != nil {
+		return session.VerifiedUser{}, inspector.err
+	}
+
+	return session.VerifiedUser{
+		Provider:       "supabase",
+		ProviderUserID: "auth_user_1",
+		Email:          "band@example.com",
+	}, nil
 }
 
 func validCalendarEventRequestBody() string {

@@ -96,7 +96,7 @@ Backend:
 Auth/storage/database for free alpha deployment:
 
 - Prefer Supabase Free for managed PostgreSQL, Auth, and Storage during alpha.
-- Keep auth and storage behind application adapters so the app can later move to Keycloak and S3-compatible storage without rewriting domain code.
+- Keep auth and storage behind application adapters so the app can later move to another auth provider and S3-compatible storage without rewriting domain code.
 - The Go backend remains the business-rule authority.
 - Do not let the frontend write directly to business tables.
 

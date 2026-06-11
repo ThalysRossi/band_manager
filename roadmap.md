@@ -158,8 +158,8 @@ For alpha, staging and production may use the same provider family but different
 - Email/password login.
 - Email verification.
 - Password reset.
-- Google login.
-- Band sign-up.
+- Google login after branding and deployment URLs are decided.
+- Verified band onboarding.
 - Band-related email instruction.
 - Owner role creation.
 - Invite users as viewers.
@@ -495,7 +495,7 @@ For alpha, staging and production may use the same provider family but different
 
 ### Platform
 
-- Full self-hosted mode with Keycloak.
+- Evaluate a full self-hosted auth provider if deployment requirements justify it.
 - S3-compatible storage abstraction.
 - Paid production deployment path.
 - Backup automation.

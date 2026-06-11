@@ -8,9 +8,12 @@ import (
 )
 
 type Context struct {
-	UserID string
-	BandID string
-	Role   permissions.Role
+	UserID       string
+	BandID       string
+	Email        string
+	BandName     string
+	BandTimezone string
+	Role         permissions.Role
 }
 
 type contextKey struct{}
@@ -22,6 +25,10 @@ func WithContext(ctx context.Context, authContext Context) (context.Context, err
 
 	if authContext.BandID == "" {
 		return nil, fmt.Errorf("auth context band id is required")
+	}
+
+	if authContext.Email == "" {
+		return nil, fmt.Errorf("auth context email is required")
 	}
 
 	if !authContext.Role.IsValid() {

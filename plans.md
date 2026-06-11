@@ -33,7 +33,7 @@ Roles:
 
 Alpha permissions:
 
-- The sign-up user is the owner.
+- The verified user who completes band onboarding is the owner.
 - Invited users are viewers.
 - Only the owner can create, update, and delete in alpha.
 - Viewers can read only.
@@ -51,7 +51,7 @@ Alpha must support:
 - email/password
 - email verification
 - password reset
-- Google login
+- Google login is deferred until branding and deployment URLs are decided.
 
 Deferred:
 
@@ -61,11 +61,15 @@ Preferred alpha auth approach:
 
 - Use Supabase Auth if the deployment target is free/managed.
 - Keep auth access behind an adapter.
+- Require email verification in every environment.
+- Verify access tokens through Supabase JWKS signing keys; do not use the legacy JWT secret.
+- Persist users, bands, and memberships only after the provider confirms the email is verified.
 - Do not let auth-provider choice leak into domain logic.
 
 Alternative later:
 
-- Keycloak if the project moves toward full self-hosting.
+- Evaluate a replacement auth provider only if deployment or self-hosting requirements justify it.
+- If the provider changes, update `auth_provider` and `auth_provider_user_id` on the existing user instead of creating a duplicate user.
 
 ### Language
 
@@ -84,7 +88,7 @@ Alternative later:
 
 - Store timestamps as UTC.
 - Use browser timezone for alpha display and date-range selection.
-- Store detected `band_timezone` at signup to avoid future report/calendar ambiguity.
+- Store detected `band_timezone` during band onboarding to avoid future report/calendar ambiguity.
 
 ## 3. Monorepo deployment strategy
 
@@ -674,7 +678,7 @@ Path filters:
 
 - Supabase Auth adapter.
 - Protected routes.
-- Owner signup model.
+- Verified owner onboarding model.
 - Viewer invite model.
 - Role enforcement.
 

@@ -23,6 +23,7 @@ import (
 
 type Dependencies struct {
 	Authenticator              session.Authenticator
+	VerifiedUserInspector      session.VerifiedUserInspector
 	AccountRepository          accounts.BandAccountRepository
 	InventoryRepository        applicationinventory.Repository
 	MerchBoothRepository       applicationmerchbooth.Repository
@@ -39,42 +40,54 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 	router.Use(middleware.CORS(appConfig.AllowedOrigins))
 
 	router.Get("/healthz", healthHandler(appLogger))
-	authHandler := authhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, appLogger)
-	router.Post("/auth/signup", authHandler.SignupOwner)
-	router.Get("/me", authHandler.GetCurrentAccount)
 
-	accountHandler := accounthandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, appLogger)
-	router.Get("/account/members", accountHandler.ListMembers)
-	router.Get("/account/invites", accountHandler.ListInvites)
-	router.Post("/account/invites", accountHandler.CreateInvite)
-	router.Post("/account/invites/accept", accountHandler.AcceptInvite)
-	router.Post("/account/invites/{inviteID}/revoke", accountHandler.RevokeInvite)
+	authHandler := authhandler.NewHandler(dependencies.AccountRepository, appLogger)
+	accountHandler := accounthandler.NewHandler(dependencies.AccountRepository, appLogger)
+	inventoryHandler := inventoryhandler.NewHandler(dependencies.InventoryRepository, appLogger)
+	merchBoothHandler := merchboothhandler.NewHandler(dependencies.MerchBoothRepository, dependencies.PaymentProvider, appConfig.MercadoPagoWebhookSecret, appConfig.MercadoPagoPointTerminalID, appLogger)
+	financialReportsHandler := financialreportshandler.NewHandler(dependencies.FinancialReportsRepository, appLogger)
+	calendarHandler := calendarhandler.NewHandler(dependencies.CalendarRepository, appLogger)
 
-	inventoryHandler := inventoryhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.InventoryRepository, appLogger)
-	router.Get("/inventory", inventoryHandler.ListInventory)
-	router.Post("/inventory/products", inventoryHandler.CreateProduct)
-	router.Put("/inventory/products/{productID}", inventoryHandler.UpdateProduct)
-	router.Delete("/inventory/products/{productID}", inventoryHandler.SoftDeleteProduct)
-	router.Put("/inventory/variants/{variantID}", inventoryHandler.UpdateVariant)
-	router.Delete("/inventory/variants/{variantID}", inventoryHandler.SoftDeleteVariant)
-
-	merchBoothHandler := merchboothhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.MerchBoothRepository, dependencies.PaymentProvider, appConfig.MercadoPagoWebhookSecret, appConfig.MercadoPagoPointTerminalID, appLogger)
-	router.Get("/merch-booth/items", merchBoothHandler.ListBoothItems)
-	router.Post("/merch-booth/checkouts/cash", merchBoothHandler.CreateCashCheckout)
-	router.Post("/merch-booth/checkouts/pix", merchBoothHandler.CreatePixCheckout)
-	router.Post("/merch-booth/checkouts/card", merchBoothHandler.CreateCardCheckout)
-	router.Post("/merch-booth/payments/{paymentID}/verify", merchBoothHandler.VerifyPixPayment)
 	router.Post("/webhooks/mercadopago/orders", merchBoothHandler.HandleMercadoPagoOrderWebhook)
 
-	financialReportsHandler := financialreportshandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.FinancialReportsRepository, appLogger)
-	router.Get("/financial-reports", financialReportsHandler.GetFinancialReport)
+	router.Group(func(authenticated chi.Router) {
+		authenticated.Use(middleware.Authenticate(dependencies.Authenticator, appLogger))
 
-	calendarHandler := calendarhandler.NewHandler(dependencies.Authenticator, dependencies.AccountRepository, dependencies.CalendarRepository, appLogger)
-	router.Get("/calendar-events", calendarHandler.ListEvents)
-	router.Post("/calendar-events", calendarHandler.CreateEvent)
-	router.Get("/calendar-events/{eventID}", calendarHandler.GetEvent)
-	router.Put("/calendar-events/{eventID}", calendarHandler.UpdateEvent)
-	router.Delete("/calendar-events/{eventID}", calendarHandler.SoftDeleteEvent)
+		authenticated.Group(func(verified chi.Router) {
+			verified.Use(middleware.RequireVerifiedIdentity(dependencies.VerifiedUserInspector, appLogger))
+			verified.Post("/account/onboarding", authHandler.OnboardOwner)
+			verified.Post("/account/invites/accept", accountHandler.AcceptInvite)
+		})
+
+		authenticated.Group(func(protected chi.Router) {
+			protected.Use(middleware.ResolveAccount(dependencies.AccountRepository, appLogger))
+			protected.Get("/me", authHandler.GetCurrentAccount)
+			protected.Get("/account/members", accountHandler.ListMembers)
+			protected.Get("/account/invites", accountHandler.ListInvites)
+			protected.Post("/account/invites", accountHandler.CreateInvite)
+			protected.Post("/account/invites/{inviteID}/revoke", accountHandler.RevokeInvite)
+
+			protected.Get("/inventory", inventoryHandler.ListInventory)
+			protected.Post("/inventory/products", inventoryHandler.CreateProduct)
+			protected.Put("/inventory/products/{productID}", inventoryHandler.UpdateProduct)
+			protected.Delete("/inventory/products/{productID}", inventoryHandler.SoftDeleteProduct)
+			protected.Put("/inventory/variants/{variantID}", inventoryHandler.UpdateVariant)
+			protected.Delete("/inventory/variants/{variantID}", inventoryHandler.SoftDeleteVariant)
+
+			protected.Get("/merch-booth/items", merchBoothHandler.ListBoothItems)
+			protected.Post("/merch-booth/checkouts/cash", merchBoothHandler.CreateCashCheckout)
+			protected.Post("/merch-booth/checkouts/pix", merchBoothHandler.CreatePixCheckout)
+			protected.Post("/merch-booth/checkouts/card", merchBoothHandler.CreateCardCheckout)
+			protected.Post("/merch-booth/payments/{paymentID}/verify", merchBoothHandler.VerifyPixPayment)
+
+			protected.Get("/financial-reports", financialReportsHandler.GetFinancialReport)
+			protected.Get("/calendar-events", calendarHandler.ListEvents)
+			protected.Post("/calendar-events", calendarHandler.CreateEvent)
+			protected.Get("/calendar-events/{eventID}", calendarHandler.GetEvent)
+			protected.Put("/calendar-events/{eventID}", calendarHandler.UpdateEvent)
+			protected.Delete("/calendar-events/{eventID}", calendarHandler.SoftDeleteEvent)
+		})
+	})
 
 	return router
 }

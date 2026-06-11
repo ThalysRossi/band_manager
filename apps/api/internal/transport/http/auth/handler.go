@@ -4,24 +4,22 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/thalys/band-manager/apps/api/internal/application/accounts"
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/domain/permissions"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
+	"github.com/thalys/band-manager/apps/api/internal/transport/middleware/authcontext"
 )
 
 type Handler struct {
-	authenticator session.Authenticator
-	repository    accounts.BandAccountRepository
-	logger        *slog.Logger
-	now           func() time.Time
+	repository accounts.BandAccountRepository
+	logger     *slog.Logger
+	now        func() time.Time
 }
 
-type SignupOwnerRequest struct {
-	Email        string `json:"email"`
+type OnboardOwnerRequest struct {
 	BandName     string `json:"bandName"`
 	BandTimezone string `json:"bandTimezone"`
 }
@@ -48,18 +46,18 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-func NewHandler(authenticator session.Authenticator, repository accounts.BandAccountRepository, logger *slog.Logger) Handler {
+func NewHandler(repository accounts.BandAccountRepository, logger *slog.Logger) Handler {
 	return Handler{
-		authenticator: authenticator,
-		repository:    repository,
-		logger:        logger,
-		now:           time.Now,
+		repository: repository,
+		logger:     logger,
+		now:        time.Now,
 	}
 }
 
-func (handler Handler) SignupOwner(response http.ResponseWriter, request *http.Request) {
-	authenticatedUser, ok := handler.authenticate(response, request)
+func (handler Handler) OnboardOwner(response http.ResponseWriter, request *http.Request) {
+	verifiedUser, ok := session.VerifiedUserFromContext(request.Context())
 	if !ok {
+		handler.writeError(response, http.StatusInternalServerError, "missing_verified_user", "Verified user context is missing")
 		return
 	}
 
@@ -75,21 +73,16 @@ func (handler Handler) SignupOwner(response http.ResponseWriter, request *http.R
 		return
 	}
 
-	var body SignupOwnerRequest
+	var body OnboardOwnerRequest
 	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 		handler.writeError(response, http.StatusBadRequest, "invalid_json", "Request body must be valid JSON")
 		return
 	}
 
-	if !strings.EqualFold(strings.TrimSpace(body.Email), authenticatedUser.Email) {
-		handler.writeError(response, http.StatusBadRequest, "email_mismatch", "Signup email must match the authenticated user email")
-		return
-	}
-
 	account, err := accounts.CreateOwnerAccount(request.Context(), handler.repository, accounts.CreateOwnerAccountInput{
-		AuthProvider:       authenticatedUser.Provider,
-		AuthProviderUserID: authenticatedUser.ProviderUserID,
-		Email:              body.Email,
+		AuthProvider:       verifiedUser.Provider,
+		AuthProviderUserID: verifiedUser.ProviderUserID,
+		Email:              verifiedUser.Email,
 		BandName:           body.BandName,
 		BandTimezone:       body.BandTimezone,
 		IdempotencyKey:     idempotencyKey,
@@ -97,8 +90,8 @@ func (handler Handler) SignupOwner(response http.ResponseWriter, request *http.R
 		CreatedAt:          handler.now().UTC(),
 	})
 	if err != nil {
-		handler.logger.Warn("owner signup failed", "error", err, "email", body.Email, "provider", authenticatedUser.Provider, "provider_user_id", authenticatedUser.ProviderUserID)
-		handler.writeError(response, http.StatusBadRequest, "signup_failed", err.Error())
+		handler.logger.Warn("owner onboarding failed", "error", err, "email", verifiedUser.Email, "provider", verifiedUser.Provider, "provider_user_id", verifiedUser.ProviderUserID)
+		handler.writeError(response, http.StatusBadRequest, "onboarding_failed", err.Error())
 		return
 	}
 
@@ -106,38 +99,20 @@ func (handler Handler) SignupOwner(response http.ResponseWriter, request *http.R
 }
 
 func (handler Handler) GetCurrentAccount(response http.ResponseWriter, request *http.Request) {
-	authenticatedUser, ok := handler.authenticate(response, request)
+	accountContext, ok := authcontext.FromContext(request.Context())
 	if !ok {
+		handler.writeError(response, http.StatusInternalServerError, "missing_account_context", "Account context is missing")
 		return
 	}
 
-	account, err := accounts.GetCurrentAccount(request.Context(), handler.repository, accounts.CurrentAccountQuery{
-		AuthProvider:       authenticatedUser.Provider,
-		AuthProviderUserID: authenticatedUser.ProviderUserID,
-	})
-	if err != nil {
-		handler.logger.Warn("current account lookup failed", "error", err, "provider", authenticatedUser.Provider, "provider_user_id", authenticatedUser.ProviderUserID)
-		handler.writeError(response, http.StatusUnauthorized, "account_not_found", "Authenticated user is not linked to a band account")
-		return
-	}
-
-	handler.writeCurrentAccount(response, http.StatusOK, toCurrentAccountResponse(account))
-}
-
-func (handler Handler) authenticate(response http.ResponseWriter, request *http.Request) (session.AuthenticatedUser, bool) {
-	token, err := session.NormalizeBearerToken(request.Header.Get("Authorization"))
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_authorization", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	authenticatedUser, err := handler.authenticator.Authenticate(request.Context(), token)
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_session", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	return authenticatedUser, true
+	handler.writeCurrentAccount(response, http.StatusOK, toCurrentAccountResponse(accounts.OwnerAccount{
+		UserID:       accountContext.UserID,
+		BandID:       accountContext.BandID,
+		Email:        accountContext.Email,
+		BandName:     accountContext.BandName,
+		BandTimezone: accountContext.BandTimezone,
+		Role:         accountContext.Role,
+	}))
 }
 
 func toCurrentAccountResponse(account accounts.OwnerAccount) CurrentAccountResponse {

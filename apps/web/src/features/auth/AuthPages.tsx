@@ -5,14 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { login, signupOwner } from './api'
-import type { CurrentAccountResponse } from './api'
+import { onboardOwner, sendPasswordReset, setNewPassword, login, signup } from './api'
 
 type Translate = (key: TranslationKey) => string
 
 type AuthPageProps = {
   translate: Translate
-  onLoginSuccess?: (account: CurrentAccountResponse) => void
+  onLoginSuccess?: () => void
 }
 
 export function LoginPage(props: AuthPageProps) {
@@ -33,10 +32,10 @@ export function LoginPage(props: AuthPageProps) {
               email: fieldValue(values, 'email'),
               password: fieldValue(values, 'password')
             })
-              .then((account) => {
+              .then(() => {
                 setStatus(props.translate('auth.loginReady'))
                 if (props.onLoginSuccess !== undefined) {
-                  props.onLoginSuccess(account)
+                  props.onLoginSuccess()
                 }
               })
               .catch(() => setStatus(props.translate('auth.genericError')))
@@ -81,20 +80,11 @@ export function SignupPage(props: AuthPageProps) {
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
-            signupOwner({
+            signup({
               email: fieldValue(values, 'email'),
-              password: fieldValue(values, 'password'),
-              bandName: fieldValue(values, 'bandName'),
-              bandTimezone: fieldValue(values, 'bandTimezone')
+              password: fieldValue(values, 'password')
             })
-              .then((account) => {
-                if (account === null) {
-                  setStatus(props.translate('auth.emailVerificationRequired'))
-                  return
-                }
-
-                setStatus(props.translate('auth.signupCreated'))
-              })
+              .then(() => setStatus(props.translate('auth.emailVerificationRequired')))
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
@@ -111,15 +101,121 @@ export function SignupPage(props: AuthPageProps) {
               autoComplete="new-password"
             />
           </div>
-          <div className="form-field">
-            <Label htmlFor="signup-band-name">{props.translate('auth.bandNameLabel')}</Label>
-            <Input id="signup-band-name" name="bandName" type="text" autoComplete="organization" />
-          </div>
-          <div className="form-field">
-            <Label htmlFor="signup-band-timezone">{props.translate('auth.timezoneLabel')}</Label>
-            <Input id="signup-band-timezone" name="bandTimezone" type="text" autoComplete="off" />
-          </div>
           <Button type="submit">{props.translate('auth.signupSubmit')}</Button>
+        </form>
+        {status === '' ? null : <p role="status">{status}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function OnboardingPage(
+  props: AuthPageProps & { accessToken: string; onSuccess: () => void }
+) {
+  const [status, setStatus] = useState<string>('')
+
+  return (
+    <Card className="auth-panel">
+      <CardHeader>
+        <h2>{props.translate('auth.onboardingTitle')}</h2>
+      </CardHeader>
+      <CardContent className="auth-content">
+        <form
+          className="auth-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const values = new FormData(event.currentTarget)
+            onboardOwner(props.accessToken, {
+              bandName: fieldValue(values, 'bandName'),
+              bandTimezone: fieldValue(values, 'bandTimezone')
+            })
+              .then(props.onSuccess)
+              .catch(() => setStatus(props.translate('auth.genericError')))
+          }}
+        >
+          <div className="form-field">
+            <Label htmlFor="onboarding-band-name">{props.translate('auth.bandNameLabel')}</Label>
+            <Input
+              id="onboarding-band-name"
+              name="bandName"
+              type="text"
+              autoComplete="organization"
+            />
+          </div>
+          <div className="form-field">
+            <Label htmlFor="onboarding-band-timezone">
+              {props.translate('auth.timezoneLabel')}
+            </Label>
+            <Input
+              id="onboarding-band-timezone"
+              name="bandTimezone"
+              type="text"
+              autoComplete="off"
+            />
+          </div>
+          <Button type="submit">{props.translate('auth.onboardingSubmit')}</Button>
+        </form>
+        {status === '' ? null : <p role="status">{status}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function PasswordResetPage(props: AuthPageProps) {
+  const [status, setStatus] = useState<string>('')
+
+  return (
+    <Card className="auth-panel">
+      <CardHeader>
+        <h2>{props.translate('auth.passwordReset')}</h2>
+      </CardHeader>
+      <CardContent className="auth-content">
+        <form
+          className="auth-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const values = new FormData(event.currentTarget)
+            sendPasswordReset(fieldValue(values, 'email'))
+              .then(() => setStatus(props.translate('auth.passwordResetSent')))
+              .catch(() => setStatus(props.translate('auth.genericError')))
+          }}
+        >
+          <div className="form-field">
+            <Label htmlFor="reset-email">{props.translate('auth.emailLabel')}</Label>
+            <Input id="reset-email" name="email" type="email" autoComplete="email" />
+          </div>
+          <Button type="submit">{props.translate('auth.passwordResetSubmit')}</Button>
+        </form>
+        {status === '' ? null : <p role="status">{status}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function PasswordUpdatePage(props: AuthPageProps) {
+  const [status, setStatus] = useState<string>('')
+
+  return (
+    <Card className="auth-panel">
+      <CardHeader>
+        <h2>{props.translate('auth.passwordUpdateTitle')}</h2>
+      </CardHeader>
+      <CardContent className="auth-content">
+        <form
+          className="auth-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const values = new FormData(event.currentTarget)
+            setNewPassword(fieldValue(values, 'password'))
+              .then(() => setStatus(props.translate('auth.passwordUpdated')))
+              .catch(() => setStatus(props.translate('auth.genericError')))
+          }}
+        >
+          <div className="form-field">
+            <Label htmlFor="new-password">{props.translate('auth.passwordLabel')}</Label>
+            <Input id="new-password" name="password" type="password" autoComplete="new-password" />
+          </div>
+          <Button type="submit">{props.translate('auth.passwordUpdateSubmit')}</Button>
         </form>
         {status === '' ? null : <p role="status">{status}</p>}
       </CardContent>

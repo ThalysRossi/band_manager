@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import {
@@ -18,9 +18,16 @@ import { translations } from 'i18n'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
-import { LoginPage, SignupPage } from '../features/auth/AuthPages'
-import { getCurrentAccount } from '../features/auth/api'
+import {
+  LoginPage,
+  OnboardingPage,
+  PasswordResetPage,
+  PasswordUpdatePage,
+  SignupPage
+} from '../features/auth/AuthPages'
+import { finishAuthCallback, getCurrentAccount } from '../features/auth/api'
 import type { CurrentAccountResponse } from '../features/auth/api'
+import { ApiError } from '../shared/api/client'
 import { AuthSessionProvider, useAuthSession } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
 
@@ -43,6 +50,9 @@ type HeaderLabelKey =
   | NavigationLabelKey
   | 'auth.loginTitle'
   | 'auth.signupTitle'
+  | 'auth.onboardingTitle'
+  | 'auth.passwordReset'
+  | 'auth.passwordUpdateTitle'
   | 'account.acceptTitle'
 
 const navigationItems: NavigationItem[] = [
@@ -113,6 +123,34 @@ const signupRoute = createRoute({
   component: SignupRoutePage
 })
 
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/onboarding',
+  component: OnboardingRoutePage
+})
+
+const authCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/auth/callback',
+  validateSearch: (search: Record<string, unknown>): { code: string; next: string } => ({
+    code: typeof search.code === 'string' ? search.code : '',
+    next: typeof search.next === 'string' ? search.next : '/onboarding'
+  }),
+  component: AuthCallbackRoutePage
+})
+
+const passwordResetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/password-reset',
+  component: PasswordResetRoutePage
+})
+
+const passwordUpdateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/password-update',
+  component: PasswordUpdateRoutePage
+})
+
 const routeTree = rootRoute.addChildren([
   inventoryRoute,
   merchBoothRoute,
@@ -121,7 +159,11 @@ const routeTree = rootRoute.addChildren([
   accountRoute,
   acceptInviteRoute,
   loginRoute,
-  signupRoute
+  signupRoute,
+  onboardingRoute,
+  authCallbackRoute,
+  passwordResetRoute,
+  passwordUpdateRoute
 ])
 
 const router = createRouter({ routeTree })
@@ -256,6 +298,60 @@ function SignupRoutePage() {
   return <SignupPage translate={translate} />
 }
 
+function OnboardingRoutePage() {
+  const translate = useTranslate()
+  const navigate = useNavigate()
+  const session = useAuthSession()
+
+  if (session.state.status === 'loading') {
+    return <p>{translate('account.loading')}</p>
+  }
+  if (session.state.status === 'unauthenticated') {
+    return <Navigate to="/login" search={{ redirect: '/' }} />
+  }
+
+  return (
+    <OnboardingPage
+      translate={translate}
+      accessToken={session.state.accessToken}
+      onSuccess={() => void navigate({ to: '/' })}
+    />
+  )
+}
+
+function AuthCallbackRoutePage() {
+  const translate = useTranslate()
+  const navigate = useNavigate()
+  const session = useAuthSession()
+  const search = authCallbackRoute.useSearch()
+  const [failed, setFailed] = useState<boolean>(false)
+
+  useEffect(() => {
+    if (search.code === '') {
+      setFailed(true)
+      return
+    }
+    void finishAuthCallback(search.code)
+      .then(session.refresh)
+      .then(() => navigate({ to: search.next }))
+      .catch(() => setFailed(true))
+  }, [navigate, search.code, search.next, session.refresh])
+
+  if (failed) {
+    return <p role="status">{translate('auth.genericError')}</p>
+  }
+
+  return <p>{translate('account.loading')}</p>
+}
+
+function PasswordResetRoutePage() {
+  return <PasswordResetPage translate={useTranslate()} />
+}
+
+function PasswordUpdateRoutePage() {
+  return <PasswordUpdatePage translate={useTranslate()} />
+}
+
 function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
   const translate = useTranslate()
 
@@ -287,6 +383,10 @@ function HeaderAccountSummary(props: { translate: (key: TranslationKey) => strin
 
   if (accountQuery.isLoading) {
     return <p className="top-bar-status">{props.translate('account.loading')}</p>
+  }
+
+  if (accountQuery.error instanceof ApiError && accountQuery.error.code === 'account_not_found') {
+    return null
   }
 
   if (accountQuery.isError || accountQuery.data === undefined) {
@@ -336,6 +436,34 @@ function ProtectedRoute(props: { redirect: ProtectedRoutePath; children: ReactNo
 
   if (session.state.status === 'unauthenticated') {
     return <Navigate to="/login" search={{ redirect: props.redirect }} />
+  }
+
+  return <AccountRequired>{props.children}</AccountRequired>
+}
+
+function AccountRequired(props: { children: ReactNode }) {
+  const session = useAuthSession()
+  const translate = useTranslate()
+  const accountQuery = useQuery({
+    queryKey: [
+      'account',
+      'required',
+      session.state.status === 'authenticated' ? session.state.accessToken : ''
+    ],
+    queryFn: () =>
+      getCurrentAccount(session.state.status === 'authenticated' ? session.state.accessToken : ''),
+    enabled: session.state.status === 'authenticated',
+    retry: false
+  })
+
+  if (accountQuery.error instanceof ApiError && accountQuery.error.code === 'account_not_found') {
+    return <Navigate to="/onboarding" />
+  }
+  if (accountQuery.isError) {
+    return <p role="status">{translate('account.genericError')}</p>
+  }
+  if (accountQuery.isLoading) {
+    return <p>{translate('account.loading')}</p>
   }
 
   return <>{props.children}</>
@@ -391,6 +519,18 @@ function headerLabelForPath(pathname: string): HeaderLabelKey {
 
   if (pathname === '/signup') {
     return 'auth.signupTitle'
+  }
+
+  if (pathname === '/onboarding') {
+    return 'auth.onboardingTitle'
+  }
+
+  if (pathname === '/password-reset') {
+    return 'auth.passwordReset'
+  }
+
+  if (pathname === '/password-update') {
+    return 'auth.passwordUpdateTitle'
   }
 
   if (pathname.startsWith('/account/invites/accept')) {

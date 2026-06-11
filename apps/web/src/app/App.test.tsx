@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { setMockCurrentAccountRole } from '../test/apiMocks'
+import { setMockCurrentAccountExists, setMockCurrentAccountRole } from '../test/apiMocks'
 import { App } from './App'
 
 const supabaseMock = vi.hoisted(() => {
@@ -89,6 +89,20 @@ describe('App', () => {
     expect(screen.getByText('owner@example.com | Owner')).toBeInTheDocument()
   })
 
+  it('redirects authenticated users without an account to onboarding', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockCurrentAccountExists(false)
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Set up your band' })).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/onboarding')
+    })
+  })
+
   it('returns to the requested protected route after login', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
     supabaseMock.signInWithPassword.mockResolvedValue({
@@ -117,15 +131,15 @@ describe('App', () => {
     })
   })
 
-  it('renders the owner signup form on the signup route', async () => {
+  it('renders the credential signup form on the signup route', async () => {
     window.history.pushState({}, '', '/signup')
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Create band account' })).toBeInTheDocument()
-    expect(screen.getAllByText('Create band account')).toHaveLength(2)
-    expect(screen.getByText(/really_awesome_band@email.com/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Create owner account' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Create account' })).toBeInTheDocument()
+    expect(screen.getAllByText('Create account')).toHaveLength(3)
+    expect(screen.getByText(/Verify your email/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Band name')).not.toBeInTheDocument()
   })
 
   it('renders account members and invites for an owner', async () => {

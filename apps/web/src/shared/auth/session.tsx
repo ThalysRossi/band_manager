@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Session } from '@supabase/supabase-js'
-
-import { createSupabaseClient } from './supabase'
+import { getAuthSession, subscribeToAuthSession } from './provider'
+import type { AuthSession } from './provider'
 
 type LoadingSessionState = {
   status: 'loading'
@@ -34,20 +33,15 @@ export function AuthSessionProvider(props: { children: ReactNode }) {
   const [state, setState] = useState<AuthSessionState>({ status: 'loading' })
 
   const refresh = useCallback(async (): Promise<void> => {
-    const supabase = createSupabaseClient()
-    const result = await supabase.auth.getSession()
-    setState(toAuthSessionState(result.data.session))
+    setState(toAuthSessionState(await getAuthSession()))
   }, [])
 
   useEffect(() => {
     let active = true
-    const supabase = createSupabaseClient()
-
-    supabase.auth
-      .getSession()
-      .then((result) => {
+    getAuthSession()
+      .then((session) => {
         if (active) {
-          setState(toAuthSessionState(result.data.session))
+          setState(toAuthSessionState(session))
         }
       })
       .catch(() => {
@@ -56,13 +50,13 @@ export function AuthSessionProvider(props: { children: ReactNode }) {
         }
       })
 
-    const listener = supabase.auth.onAuthStateChange((_event, session) => {
+    const subscription = subscribeToAuthSession((session) => {
       setState(toAuthSessionState(session))
     })
 
     return () => {
       active = false
-      listener.data.subscription.unsubscribe()
+      subscription.unsubscribe()
     }
   }, [])
 
@@ -85,19 +79,14 @@ export function useAuthSession(): AuthSessionContextValue {
   return value
 }
 
-function toAuthSessionState(session: Session | null): AuthSessionState {
+function toAuthSessionState(session: AuthSession | null): AuthSessionState {
   if (session === null) {
-    return { status: 'unauthenticated' }
-  }
-
-  const email = session.user.email
-  if (email === undefined || email.trim() === '') {
     return { status: 'unauthenticated' }
   }
 
   return {
     status: 'authenticated',
-    accessToken: session.access_token,
-    email
+    accessToken: session.accessToken,
+    email: session.email
   }
 }

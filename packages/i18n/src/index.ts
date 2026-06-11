@@ -7,8 +7,15 @@ export type TranslationKey =
   | 'auth.emailLabel'
   | 'auth.loginSubmit'
   | 'auth.loginTitle'
+  | 'auth.onboardingSubmit'
+  | 'auth.onboardingTitle'
   | 'auth.passwordReset'
+  | 'auth.passwordResetSent'
+  | 'auth.passwordResetSubmit'
   | 'auth.passwordLabel'
+  | 'auth.passwordUpdateSubmit'
+  | 'auth.passwordUpdateTitle'
+  | 'auth.passwordUpdated'
   | 'auth.signupSubmit'
   | 'auth.signupTitle'
   | 'auth.timezoneLabel'
@@ -65,19 +72,26 @@ export const translations: Record<Locale, TranslationDictionary> = {
   en: {
     'app.title': 'Band Manager',
     'auth.bandNameLabel': 'Band name',
-    'auth.emailInstruction': 'Use a band-related email, for example really_awesome_band@email.com.',
+    'auth.emailInstruction': 'Verify your email before setting up the band workspace.',
     'auth.emailLabel': 'Email',
     'auth.loginSubmit': 'Log in',
     'auth.loginTitle': 'Log in',
+    'auth.onboardingSubmit': 'Create band workspace',
+    'auth.onboardingTitle': 'Set up your band',
     'auth.passwordLabel': 'Password',
     'auth.passwordReset': 'Reset password',
-    'auth.signupSubmit': 'Create owner account',
-    'auth.signupTitle': 'Create band account',
+    'auth.passwordResetSent': 'Check your email for the password reset link.',
+    'auth.passwordResetSubmit': 'Send reset link',
+    'auth.passwordUpdateSubmit': 'Update password',
+    'auth.passwordUpdateTitle': 'Choose a new password',
+    'auth.passwordUpdated': 'Password updated.',
+    'auth.signupSubmit': 'Create account',
+    'auth.signupTitle': 'Create account',
     'auth.timezoneLabel': 'Band timezone',
     'auth.emailVerificationRequired':
       'Check your email, verify the account, then log in to finish setup.',
     'auth.genericError': 'Authentication failed. Check the fields and try again.',
-    'auth.signupCreated': 'Owner account created.',
+    'auth.signupCreated': 'Account created.',
     'auth.loginReady': 'Login successful.',
     'account.acceptLoading': 'Accepting invite...',
     'account.acceptLoginPrompt': 'Log in with the invited email to accept this invite.',
@@ -125,20 +139,26 @@ export const translations: Record<Locale, TranslationDictionary> = {
   'pt-BR': {
     'app.title': 'Band Manager',
     'auth.bandNameLabel': 'Nome da banda',
-    'auth.emailInstruction':
-      'Use um email relacionado a banda, por exemplo really_awesome_band@email.com.',
+    'auth.emailInstruction': 'Verifique seu email antes de configurar o espaco da banda.',
     'auth.emailLabel': 'Email',
     'auth.loginSubmit': 'Entrar',
     'auth.loginTitle': 'Entrar',
+    'auth.onboardingSubmit': 'Criar espaco da banda',
+    'auth.onboardingTitle': 'Configurar sua banda',
     'auth.passwordLabel': 'Senha',
     'auth.passwordReset': 'Redefinir senha',
-    'auth.signupSubmit': 'Criar conta de dono',
-    'auth.signupTitle': 'Criar conta da banda',
+    'auth.passwordResetSent': 'Verifique seu email para acessar o link de redefinicao.',
+    'auth.passwordResetSubmit': 'Enviar link de redefinicao',
+    'auth.passwordUpdateSubmit': 'Atualizar senha',
+    'auth.passwordUpdateTitle': 'Escolha uma nova senha',
+    'auth.passwordUpdated': 'Senha atualizada.',
+    'auth.signupSubmit': 'Criar conta',
+    'auth.signupTitle': 'Criar conta',
     'auth.timezoneLabel': 'Fuso horario da banda',
     'auth.emailVerificationRequired':
       'Verifique seu email e depois entre para concluir a configuracao.',
     'auth.genericError': 'A autenticacao falhou. Confira os campos e tente novamente.',
-    'auth.signupCreated': 'Conta de dono criada.',
+    'auth.signupCreated': 'Conta criada.',
     'auth.loginReady': 'Login realizado.',
     'account.acceptLoading': 'Aceitando convite...',
     'account.acceptLoginPrompt': 'Entre com o email convidado para aceitar este convite.',

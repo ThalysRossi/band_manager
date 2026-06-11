@@ -15,24 +15,24 @@ import (
 	"github.com/thalys/band-manager/apps/api/internal/application/session"
 	"github.com/thalys/band-manager/apps/api/internal/domain/permissions"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
+	"github.com/thalys/band-manager/apps/api/internal/transport/middleware/authcontext"
 )
 
-func TestSignupOwnerRequiresIdempotencyKey(t *testing.T) {
+func TestOnboardOwnerRequiresIdempotencyKey(t *testing.T) {
 	t.Parallel()
 
 	handler := testHandler()
-	request := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewBufferString(`{"email":"band@example.com","bandName":"Os Testes","bandTimezone":"America/Recife"}`))
-	request.Header.Set("Authorization", "Bearer token")
+	request := authenticatedRequest(t, http.MethodPost, "/account/onboarding", `{"bandName":"Os Testes","bandTimezone":"America/Recife"}`)
 	response := httptest.NewRecorder()
 
-	middleware.RequestID(http.HandlerFunc(handler.SignupOwner)).ServeHTTP(response, request)
+	middleware.RequestID(http.HandlerFunc(handler.OnboardOwner)).ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }
 
-func TestSignupOwnerCreatesAccount(t *testing.T) {
+func TestOnboardOwnerCreatesAccount(t *testing.T) {
 	t.Parallel()
 
 	repository := &fakeRepository{
@@ -49,12 +49,11 @@ func TestSignupOwnerCreatesAccount(t *testing.T) {
 	handler.now = func() time.Time {
 		return time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewBufferString(`{"email":"band@example.com","bandName":"Os Testes","bandTimezone":"America/Recife"}`))
-	request.Header.Set("Authorization", "Bearer token")
+	request := authenticatedRequest(t, http.MethodPost, "/account/onboarding", `{"bandName":"Os Testes","bandTimezone":"America/Recife"}`)
 	request.Header.Set("Idempotency-Key", "idem_1")
 	response := httptest.NewRecorder()
 
-	middleware.RequestID(http.HandlerFunc(handler.SignupOwner)).ServeHTTP(response, request)
+	middleware.RequestID(http.HandlerFunc(handler.OnboardOwner)).ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
@@ -74,37 +73,30 @@ func TestSignupOwnerCreatesAccount(t *testing.T) {
 	}
 }
 
-func TestGetCurrentAccountRejectsMissingAccount(t *testing.T) {
+func TestGetCurrentAccountReturnsResolvedContext(t *testing.T) {
 	t.Parallel()
 
-	repository := &fakeRepository{err: errors.New("not found")}
-	handler := testHandlerWithRepository(repository)
+	handler := testHandler()
 	request := httptest.NewRequest(http.MethodGet, "/me", nil)
-	request.Header.Set("Authorization", "Bearer token")
+	ctx, err := authcontext.WithContext(request.Context(), authcontext.Context{
+		UserID:       "user_1",
+		BandID:       "band_1",
+		Email:        "band@example.com",
+		BandName:     "Os Testes",
+		BandTimezone: "America/Recife",
+		Role:         permissions.RoleOwner,
+	})
+	if err != nil {
+		t.Fatalf("create account context: %v", err)
+	}
+	request = request.WithContext(ctx)
 	response := httptest.NewRecorder()
 
 	handler.GetCurrentAccount(response, request)
 
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
 	}
-}
-
-type fakeAuthenticator struct{}
-
-func (authenticator fakeAuthenticator) Authenticate(ctx context.Context, bearerToken string) (session.AuthenticatedUser, error) {
-	if ctx == nil {
-		return session.AuthenticatedUser{}, errors.New("context is required")
-	}
-	if bearerToken != "token" {
-		return session.AuthenticatedUser{}, errors.New("unexpected token")
-	}
-
-	return session.AuthenticatedUser{
-		Provider:       "supabase",
-		ProviderUserID: "auth_user_1",
-		Email:          "band@example.com",
-	}, nil
 }
 
 type fakeRepository struct {
@@ -161,5 +153,28 @@ func testHandler() Handler {
 }
 
 func testHandlerWithRepository(repository *fakeRepository) Handler {
-	return NewHandler(fakeAuthenticator{}, repository, slog.Default())
+	return NewHandler(repository, slog.Default())
+}
+
+func authenticatedRequest(t *testing.T, method string, target string, body string) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest(method, target, bytes.NewBufferString(body))
+	ctx, err := session.WithAuthenticatedUser(request.Context(), session.AuthenticatedUser{
+		Provider:       "supabase",
+		ProviderUserID: "auth_user_1",
+		Email:          "band@example.com",
+	}, "token")
+	if err != nil {
+		t.Fatalf("create authenticated context: %v", err)
+	}
+	ctx, err = session.WithVerifiedUser(ctx, session.VerifiedUser{
+		Provider:       "supabase",
+		ProviderUserID: "auth_user_1",
+		Email:          "band@example.com",
+	})
+	if err != nil {
+		t.Fatalf("create verified context: %v", err)
+	}
+
+	return request.WithContext(ctx)
 }

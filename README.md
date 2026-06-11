@@ -53,7 +53,8 @@ API_ADDR=:8080 \
 API_ALLOWED_ORIGINS=http://localhost:5173 \
 DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable \
 REDIS_URL=redis://localhost:6379/0 \
-SUPABASE_JWT_SECRET=replace-me \
+SUPABASE_URL=https://example.supabase.co \
+SUPABASE_ANON_KEY=replace-me \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
 MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 MERCADOPAGO_POINT_TERMINAL_ID=replace-me \
@@ -85,7 +86,7 @@ cd apps/api && go test ./...
 - Monorepo skeleton is in place.
 - API foundation exposes `GET /healthz`.
 - Frontend foundation renders the initial app shell with Portuguese/English translation support.
-- Auth/account foundation defines owner signup contracts, alpha role rules, and account tables.
+- Auth/account foundation defines verified onboarding contracts, alpha role rules, and account tables.
 
 ## License
 

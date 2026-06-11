@@ -14,10 +14,10 @@ import (
 	"github.com/thalys/band-manager/apps/api/internal/domain/permissions"
 	authhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
+	"github.com/thalys/band-manager/apps/api/internal/transport/middleware/authcontext"
 )
 
 type Handler struct {
-	authenticator  session.Authenticator
 	repository     accounts.BandAccountRepository
 	logger         *slog.Logger
 	now            func() time.Time
@@ -59,9 +59,8 @@ type InviteResponse struct {
 	Token     string                `json:"token,omitempty"`
 }
 
-func NewHandler(authenticator session.Authenticator, repository accounts.BandAccountRepository, logger *slog.Logger) Handler {
+func NewHandler(repository accounts.BandAccountRepository, logger *slog.Logger) Handler {
 	return Handler{
-		authenticator:  authenticator,
 		repository:     repository,
 		logger:         logger,
 		now:            time.Now,
@@ -161,8 +160,9 @@ func (handler Handler) RevokeInvite(response http.ResponseWriter, request *http.
 }
 
 func (handler Handler) AcceptInvite(response http.ResponseWriter, request *http.Request) {
-	authenticatedUser, ok := handler.authenticate(response, request)
+	verifiedUser, ok := session.VerifiedUserFromContext(request.Context())
 	if !ok {
+		handler.writeError(response, http.StatusInternalServerError, "missing_verified_user", "Verified user context is missing")
 		return
 	}
 
@@ -177,9 +177,9 @@ func (handler Handler) AcceptInvite(response http.ResponseWriter, request *http.
 	}
 
 	member, err := accounts.AcceptBandInvite(request.Context(), handler.repository, accounts.AcceptBandInviteInput{
-		AuthProvider:       authenticatedUser.Provider,
-		AuthProviderUserID: authenticatedUser.ProviderUserID,
-		Email:              authenticatedUser.Email,
+		AuthProvider:       verifiedUser.Provider,
+		AuthProviderUserID: verifiedUser.ProviderUserID,
+		Email:              verifiedUser.Email,
 		Token:              body.Token,
 		IdempotencyKey:     idempotencyKey,
 		RequestID:          requestID,
@@ -194,38 +194,20 @@ func (handler Handler) AcceptInvite(response http.ResponseWriter, request *http.
 }
 
 func (handler Handler) accountContext(response http.ResponseWriter, request *http.Request) (accounts.OwnerAccount, bool) {
-	authenticatedUser, ok := handler.authenticate(response, request)
+	context, ok := authcontext.FromContext(request.Context())
 	if !ok {
+		handler.writeError(response, http.StatusInternalServerError, "missing_account_context", "Account context is missing")
 		return accounts.OwnerAccount{}, false
 	}
 
-	account, err := accounts.GetCurrentAccount(request.Context(), handler.repository, accounts.CurrentAccountQuery{
-		AuthProvider:       authenticatedUser.Provider,
-		AuthProviderUserID: authenticatedUser.ProviderUserID,
-	})
-	if err != nil {
-		handler.logger.Warn("account lookup failed", "error", err, "provider", authenticatedUser.Provider, "provider_user_id", authenticatedUser.ProviderUserID)
-		handler.writeError(response, http.StatusUnauthorized, "account_not_found", "Authenticated user is not linked to a band account")
-		return accounts.OwnerAccount{}, false
-	}
-
-	return account, true
-}
-
-func (handler Handler) authenticate(response http.ResponseWriter, request *http.Request) (session.AuthenticatedUser, bool) {
-	token, err := session.NormalizeBearerToken(request.Header.Get("Authorization"))
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_authorization", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	authenticatedUser, err := handler.authenticator.Authenticate(request.Context(), token)
-	if err != nil {
-		handler.writeError(response, http.StatusUnauthorized, "invalid_session", err.Error())
-		return session.AuthenticatedUser{}, false
-	}
-
-	return authenticatedUser, true
+	return accounts.OwnerAccount{
+		UserID:       context.UserID,
+		BandID:       context.BandID,
+		Email:        context.Email,
+		BandName:     context.BandName,
+		BandTimezone: context.BandTimezone,
+		Role:         context.Role,
+	}, true
 }
 
 func (handler Handler) mutationHeaders(response http.ResponseWriter, request *http.Request) (string, string, bool) {

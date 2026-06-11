@@ -41,9 +41,15 @@ func main() {
 	}
 	defer databasePool.Close()
 
-	authenticator, err := supabase.NewAuthenticator(appConfig.SupabaseJWTSecret)
+	supabaseHTTPClient := &http.Client{Timeout: 5 * time.Second}
+	authenticator, err := supabase.NewAuthenticator(ctx, appConfig.SupabaseURL, supabaseHTTPClient, appLogger)
 	if err != nil {
 		appLogger.Error("supabase authenticator creation failed", "error", err)
+		os.Exit(1)
+	}
+	verifiedUserInspector, err := supabase.NewVerifiedUserInspector(appConfig.SupabaseURL, appConfig.SupabaseAnonKey, supabaseHTTPClient, appLogger)
+	if err != nil {
+		appLogger.Error("supabase verified user inspector creation failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -61,6 +67,7 @@ func main() {
 		Addr: appConfig.Address,
 		Handler: httpapi.NewRouter(appConfig, appLogger, httpapi.Dependencies{
 			Authenticator:              authenticator,
+			VerifiedUserInspector:      verifiedUserInspector,
 			AccountRepository:          accountRepository,
 			InventoryRepository:        inventoryRepository,
 			MerchBoothRepository:       merchBoothRepository,

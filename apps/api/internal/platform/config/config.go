@@ -13,7 +13,8 @@ type Config struct {
 	AllowedOrigins             []string
 	DatabaseURL                string
 	RedisURL                   string
-	SupabaseJWTSecret          string
+	SupabaseURL                string
+	SupabaseAnonKey            string
 	MercadoPagoAccessToken     string
 	MercadoPagoWebhookSecret   string
 	MercadoPagoPointTerminalID string
@@ -45,7 +46,12 @@ func LoadFromEnvironment() (Config, error) {
 		return Config{}, err
 	}
 
-	supabaseJWTSecret, err := requiredEnv("SUPABASE_JWT_SECRET")
+	supabaseURL, err := requiredEnv("SUPABASE_URL")
+	if err != nil {
+		return Config{}, err
+	}
+
+	supabaseAnonKey, err := requiredEnv("SUPABASE_ANON_KEY")
 	if err != nil {
 		return Config{}, err
 	}
@@ -76,7 +82,8 @@ func LoadFromEnvironment() (Config, error) {
 		AllowedOrigins:             allowedOrigins,
 		DatabaseURL:                databaseURL,
 		RedisURL:                   redisURL,
-		SupabaseJWTSecret:          supabaseJWTSecret,
+		SupabaseURL:                supabaseURL,
+		SupabaseAnonKey:            supabaseAnonKey,
 		MercadoPagoAccessToken:     mercadoPagoAccessToken,
 		MercadoPagoWebhookSecret:   mercadoPagoWebhookSecret,
 		MercadoPagoPointTerminalID: mercadoPagoPointTerminalID,

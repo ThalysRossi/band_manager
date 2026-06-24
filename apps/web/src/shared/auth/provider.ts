@@ -37,6 +37,11 @@ export async function getAuthSession(): Promise<AuthSession | null> {
   return result.data.session === null ? null : toAuthSession(result.data.session)
 }
 
+export async function logout(): Promise<void> {
+  const result = await createSupabaseClient().auth.signOut()
+  throwIfAuthError(result.error)
+}
+
 export function subscribeToAuthSession(
   listener: (session: AuthSession | null) => void
 ): AuthSubscription {

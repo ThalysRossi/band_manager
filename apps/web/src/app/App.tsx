@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Link,
   Navigate,
@@ -17,6 +17,14 @@ import type { Locale, TranslationKey } from 'i18n'
 import { translations } from 'i18n'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { AccountPage, AcceptInvitePage } from '../features/account/AccountPages'
 import {
   LoginPage,
@@ -423,25 +431,76 @@ function BandContext(props: {
   account: CurrentAccountResponse
   translate: (key: TranslationKey) => string
 }) {
+  const [logoutError, setLogoutError] = useState<string>('')
+  const [logoutPending, setLogoutPending] = useState<boolean>(false)
+  const queryClient = useQueryClient()
+  const session = useAuthSession()
+
+  async function handleLogout(): Promise<void> {
+    setLogoutPending(true)
+    setLogoutError('')
+    try {
+      await session.logout()
+      queryClient.removeQueries({ queryKey: ['account'] })
+    } catch {
+      setLogoutError(props.translate('auth.logoutFailed'))
+      setLogoutPending(false)
+    }
+  }
+
   return (
-    <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-ui-10">
-      <Avatar
-        className="size-9 border border-green-100/45 bg-[#163a2a] text-[#dff7ea]"
-        aria-hidden="true"
-      >
-        <AvatarFallback className="bg-transparent text-[0.8125rem] font-extrabold text-inherit">
-          {bandInitials(props.account.activeBand.bandName)}
-        </AvatarFallback>
-      </Avatar>
-      <span className="grid min-w-0 gap-ui-2 text-right">
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-[750] text-white-100">
-          {props.account.activeBand.bandName}
-        </span>
-        <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-white-300">
-          {props.account.user.email} |{' '}
-          {props.translate(roleLabelKey(props.account.activeBand.role))}
-        </span>
-      </span>
+    <div className="grid justify-items-end gap-ui-4">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-ui-10 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <Avatar className="size-9 border border-green-100/45 bg-[#163a2a] text-[#dff7ea]">
+              <AvatarFallback className="bg-transparent text-[0.8125rem] font-extrabold text-inherit">
+                {bandInitials(props.account.activeBand.bandName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="grid min-w-0 gap-ui-2 text-right">
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-[750] text-white-100">
+                {props.account.activeBand.bandName}
+              </span>
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-white-300">
+                {props.account.user.email} |{' '}
+                {props.translate(roleLabelKey(props.account.activeBand.role))}
+              </span>
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="grid gap-ui-2">
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+              {props.account.activeBand.bandName}
+            </span>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-normal text-muted-foreground">
+              {props.account.user.email}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {props.translate(roleLabelKey(props.account.activeBand.role))}
+            </span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={logoutPending}
+            onSelect={(event) => {
+              event.preventDefault()
+              void handleLogout()
+            }}
+          >
+            {props.translate('auth.logout')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {logoutError === '' ? null : (
+        <p className="m-0 text-right text-xs text-red-100" role="status">
+          {logoutError}
+        </p>
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ const supabaseMock = vi.hoisted(() => {
   return {
     getSession: vi.fn(),
     signInWithPassword: vi.fn(),
+    signOut: vi.fn(),
     signUp: vi.fn(),
     unsubscribe: vi.fn()
   }
@@ -19,6 +20,7 @@ vi.mock('@supabase/supabase-js', () => {
       auth: {
         getSession: supabaseMock.getSession,
         signInWithPassword: supabaseMock.signInWithPassword,
+        signOut: supabaseMock.signOut,
         signUp: supabaseMock.signUp,
         onAuthStateChange: () => ({
           data: {
@@ -37,9 +39,11 @@ describe('App', () => {
     window.history.pushState({}, '', '/')
     supabaseMock.getSession.mockReset()
     supabaseMock.signInWithPassword.mockReset()
+    supabaseMock.signOut.mockReset()
     supabaseMock.signUp.mockReset()
     supabaseMock.unsubscribe.mockReset()
     supabaseMock.getSession.mockResolvedValue({ data: { session: null } })
+    supabaseMock.signOut.mockResolvedValue({ error: null })
     vi.stubGlobal('crypto', {
       randomUUID: () => 'test-idempotency-key'
     })
@@ -153,6 +157,24 @@ describe('App', () => {
     expect(screen.getByText('viewer@example.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create invite' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument()
+  })
+
+  it('logs out from the header account dropdown', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    fireEvent.keyDown(await screen.findByRole('button', { name: /Os Testes/i }), {
+      key: 'Enter',
+      code: 'Enter'
+    })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Log out' }))
+
+    await waitFor(() => {
+      expect(supabaseMock.signOut).toHaveBeenCalledTimes(1)
+    })
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument()
   })
 
   it('hides invite mutation controls for a viewer', async () => {

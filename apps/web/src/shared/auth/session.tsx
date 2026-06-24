@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { getAuthSession, subscribeToAuthSession } from './provider'
+import { getAuthSession, logout as logoutFromProvider, subscribeToAuthSession } from './provider'
 import type { AuthSession } from './provider'
 
 type LoadingSessionState = {
@@ -25,6 +25,7 @@ export type AuthSessionState =
 type AuthSessionContextValue = {
   state: AuthSessionState
   refresh: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null)
@@ -34,6 +35,11 @@ export function AuthSessionProvider(props: { children: ReactNode }) {
 
   const refresh = useCallback(async (): Promise<void> => {
     setState(toAuthSessionState(await getAuthSession()))
+  }, [])
+
+  const logout = useCallback(async (): Promise<void> => {
+    await logoutFromProvider()
+    setState({ status: 'unauthenticated' })
   }, [])
 
   useEffect(() => {
@@ -63,9 +69,10 @@ export function AuthSessionProvider(props: { children: ReactNode }) {
   const value = useMemo<AuthSessionContextValue>(() => {
     return {
       state,
-      refresh
+      refresh,
+      logout
     }
-  }, [refresh, state])
+  }, [logout, refresh, state])
 
   return <AuthSessionContext.Provider value={value}>{props.children}</AuthSessionContext.Provider>
 }

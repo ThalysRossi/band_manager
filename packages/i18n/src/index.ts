@@ -23,6 +23,8 @@ export type TranslationKey =
   | 'auth.genericError'
   | 'auth.signupCreated'
   | 'auth.loginReady'
+  | 'auth.logout'
+  | 'auth.logoutFailed'
   | 'account.acceptLoading'
   | 'account.acceptLoginPrompt'
   | 'account.acceptMissingToken'
@@ -93,6 +95,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.genericError': 'Authentication failed. Check the fields and try again.',
     'auth.signupCreated': 'Account created.',
     'auth.loginReady': 'Login successful.',
+    'auth.logout': 'Log out',
+    'auth.logoutFailed': 'Logout failed. Try again.',
     'account.acceptLoading': 'Accepting invite...',
     'account.acceptLoginPrompt': 'Log in with the invited email to accept this invite.',
     'account.acceptMissingToken': 'Invite token is missing.',
@@ -160,6 +164,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.genericError': 'A autenticacao falhou. Confira os campos e tente novamente.',
     'auth.signupCreated': 'Conta criada.',
     'auth.loginReady': 'Login realizado.',
+    'auth.logout': 'Sair',
+    'auth.logoutFailed': 'Nao foi possivel sair. Tente novamente.',
     'account.acceptLoading': 'Aceitando convite...',
     'account.acceptLoginPrompt': 'Entre com o email convidado para aceitar este convite.',
     'account.acceptMissingToken': 'O token do convite esta ausente.',

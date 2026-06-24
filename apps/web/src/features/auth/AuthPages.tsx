@@ -18,13 +18,13 @@ export function LoginPage(props: AuthPageProps) {
   const [status, setStatus] = useState<string>('')
 
   return (
-    <Card className="auth-panel">
+    <Card className="w-[min(100%,420px)]">
       <CardHeader>
-        <h2>{props.translate('auth.loginTitle')}</h2>
+        <h2 className="m-0">{props.translate('auth.loginTitle')}</h2>
       </CardHeader>
-      <CardContent className="auth-content">
+      <CardContent className="grid gap-ui-16">
         <form
-          className="auth-form"
+          className="grid gap-ui-16"
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
@@ -41,11 +41,11 @@ export function LoginPage(props: AuthPageProps) {
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="login-email">{props.translate('auth.emailLabel')}</Label>
             <Input id="login-email" name="email" type="email" autoComplete="email" />
           </div>
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="login-password">{props.translate('auth.passwordLabel')}</Label>
             <Input
               id="login-password"
@@ -69,14 +69,14 @@ export function SignupPage(props: AuthPageProps) {
   const [status, setStatus] = useState<string>('')
 
   return (
-    <Card className="auth-panel">
+    <Card className="w-[min(100%,420px)]">
       <CardHeader>
-        <h2>{props.translate('auth.signupTitle')}</h2>
+        <h2 className="m-0">{props.translate('auth.signupTitle')}</h2>
         <CardDescription>{props.translate('auth.emailInstruction')}</CardDescription>
       </CardHeader>
-      <CardContent className="auth-content">
+      <CardContent className="grid gap-ui-16">
         <form
-          className="auth-form"
+          className="grid gap-ui-16"
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
@@ -88,11 +88,11 @@ export function SignupPage(props: AuthPageProps) {
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="signup-email">{props.translate('auth.emailLabel')}</Label>
             <Input id="signup-email" name="email" type="email" autoComplete="email" />
           </div>
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="signup-password">{props.translate('auth.passwordLabel')}</Label>
             <Input
               id="signup-password"
@@ -115,13 +115,13 @@ export function OnboardingPage(
   const [status, setStatus] = useState<string>('')
 
   return (
-    <Card className="auth-panel">
+    <Card className="w-[min(100%,420px)]">
       <CardHeader>
-        <h2>{props.translate('auth.onboardingTitle')}</h2>
+        <h2 className="m-0">{props.translate('auth.onboardingTitle')}</h2>
       </CardHeader>
-      <CardContent className="auth-content">
+      <CardContent className="grid gap-ui-16">
         <form
-          className="auth-form"
+          className="grid gap-ui-16"
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
@@ -133,7 +133,7 @@ export function OnboardingPage(
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="onboarding-band-name">{props.translate('auth.bandNameLabel')}</Label>
             <Input
               id="onboarding-band-name"
@@ -142,7 +142,7 @@ export function OnboardingPage(
               autoComplete="organization"
             />
           </div>
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="onboarding-band-timezone">
               {props.translate('auth.timezoneLabel')}
             </Label>
@@ -165,13 +165,13 @@ export function PasswordResetPage(props: AuthPageProps) {
   const [status, setStatus] = useState<string>('')
 
   return (
-    <Card className="auth-panel">
+    <Card className="w-[min(100%,420px)]">
       <CardHeader>
-        <h2>{props.translate('auth.passwordReset')}</h2>
+        <h2 className="m-0">{props.translate('auth.passwordReset')}</h2>
       </CardHeader>
-      <CardContent className="auth-content">
+      <CardContent className="grid gap-ui-16">
         <form
-          className="auth-form"
+          className="grid gap-ui-16"
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
@@ -180,7 +180,7 @@ export function PasswordResetPage(props: AuthPageProps) {
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="reset-email">{props.translate('auth.emailLabel')}</Label>
             <Input id="reset-email" name="email" type="email" autoComplete="email" />
           </div>
@@ -196,13 +196,13 @@ export function PasswordUpdatePage(props: AuthPageProps) {
   const [status, setStatus] = useState<string>('')
 
   return (
-    <Card className="auth-panel">
+    <Card className="w-[min(100%,420px)]">
       <CardHeader>
-        <h2>{props.translate('auth.passwordUpdateTitle')}</h2>
+        <h2 className="m-0">{props.translate('auth.passwordUpdateTitle')}</h2>
       </CardHeader>
-      <CardContent className="auth-content">
+      <CardContent className="grid gap-ui-16">
         <form
-          className="auth-form"
+          className="grid gap-ui-16"
           onSubmit={(event) => {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
@@ -211,7 +211,7 @@ export function PasswordUpdatePage(props: AuthPageProps) {
               .catch(() => setStatus(props.translate('auth.genericError')))
           }}
         >
-          <div className="form-field">
+          <div className="grid gap-ui-8">
             <Label htmlFor="new-password">{props.translate('auth.passwordLabel')}</Label>
             <Input id="new-password" name="password" type="password" autoComplete="new-password" />
           </div>

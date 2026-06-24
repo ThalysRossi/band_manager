@@ -193,20 +193,28 @@ function RootLayout() {
   const headerLabelKey = headerLabelForPath(location.pathname)
 
   return (
-    <main className="app-shell">
-      <header className="top-bar">
-        <div className="brand-lockup">
-          <h1>{translate('app.title')}</h1>
-          <p>{translate(headerLabelKey)}</p>
+    <main className="min-h-screen bg-[linear-gradient(180deg,#151813_0%,var(--color-black-100)_32%,var(--color-black-100)_100%)] pb-[72px] min-[800px]:grid min-[800px]:grid-cols-[240px_minmax(0,1fr)] min-[800px]:pb-0">
+      <header className="flex min-h-16 items-center justify-between gap-ui-16 border-b border-border bg-[rgba(17,19,15,0.92)] p-ui-16 backdrop-blur-md min-[800px]:col-span-full min-[800px]:px-ui-32 min-[800px]:py-[18px]">
+        <div className="grid min-w-0 gap-ui-2">
+          <h1 className="m-0 text-lg font-bold">{translate('app.title')}</h1>
+          <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-[650] text-white-300">
+            {translate(headerLabelKey)}
+          </p>
         </div>
         <HeaderAccountSummary translate={translate} />
       </header>
 
-      <section className="workspace" aria-label={translate('app.title')}>
+      <section
+        className="mx-auto w-[min(100%,960px)] px-ui-16 py-ui-32 min-[800px]:col-start-2 min-[800px]:row-start-2 min-[800px]:p-ui-32"
+        aria-label={translate('app.title')}
+      >
         <Outlet />
       </section>
 
-      <nav className="bottom-nav" aria-label={translate('app.title')}>
+      <nav
+        className="fixed inset-x-0 bottom-0 grid min-h-16 grid-cols-5 border-t border-border bg-[rgba(20,23,18,0.96)] backdrop-blur-md min-[800px]:sticky min-[800px]:top-[65px] min-[800px]:col-start-1 min-[800px]:row-start-2 min-[800px]:flex min-[800px]:min-h-[calc(100vh-65px)] min-[800px]:flex-col min-[800px]:border-r min-[800px]:border-t-0 min-[800px]:p-ui-12"
+        aria-label={translate('app.title')}
+      >
         {navigationItems.map((item) => {
           const Icon = item.icon
 
@@ -215,10 +223,13 @@ function RootLayout() {
               key={item.key}
               to={item.href}
               activeOptions={{ exact: item.href === '/' }}
-              activeProps={{ className: 'is-active' }}
+              className="grid min-h-16 min-w-0 content-center place-items-center gap-ui-4 text-xs font-[650] text-white-200 min-[800px]:min-h-11 min-[800px]:grid-cols-[24px_minmax(0,1fr)] min-[800px]:justify-start min-[800px]:rounded-md min-[800px]:px-ui-12 min-[800px]:[place-items:center_start]"
+              activeProps={{ className: 'bg-[#203b2f] text-white-100' }}
             >
               <Icon aria-hidden="true" size={20} strokeWidth={2} />
-              <span>{translate(item.key)}</span>
+              <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-ui-4">
+                {translate(item.key)}
+              </span>
             </Link>
           )
         })}
@@ -356,9 +367,9 @@ function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
   const translate = useTranslate()
 
   return (
-    <div className="workspace-header">
-      <h2>{translate(props.titleKey)}</h2>
-      <p>{translate('status.backendReady')}</p>
+    <div className="grid gap-ui-8">
+      <h2 className="m-0 text-[1.75rem] leading-[1.15]">{translate(props.titleKey)}</h2>
+      <p className="m-0 text-base text-white-300">{translate('status.backendReady')}</p>
     </div>
   )
 }
@@ -374,7 +385,11 @@ function HeaderAccountSummary(props: { translate: (key: TranslationKey) => strin
   })
 
   if (session.state.status === 'loading') {
-    return <p className="top-bar-status">{props.translate('account.loading')}</p>
+    return (
+      <p className="m-0 text-right text-[0.8125rem] text-white-300">
+        {props.translate('account.loading')}
+      </p>
+    )
   }
 
   if (session.state.status === 'unauthenticated') {
@@ -382,7 +397,11 @@ function HeaderAccountSummary(props: { translate: (key: TranslationKey) => strin
   }
 
   if (accountQuery.isLoading) {
-    return <p className="top-bar-status">{props.translate('account.loading')}</p>
+    return (
+      <p className="m-0 text-right text-[0.8125rem] text-white-300">
+        {props.translate('account.loading')}
+      </p>
+    )
   }
 
   if (accountQuery.error instanceof ApiError && accountQuery.error.code === 'account_not_found') {
@@ -391,7 +410,7 @@ function HeaderAccountSummary(props: { translate: (key: TranslationKey) => strin
 
   if (accountQuery.isError || accountQuery.data === undefined) {
     return (
-      <p className="top-bar-status" role="status">
+      <p className="m-0 text-right text-[0.8125rem] text-white-300" role="status">
         {props.translate('account.genericError')}
       </p>
     )
@@ -405,15 +424,20 @@ function BandContext(props: {
   translate: (key: TranslationKey) => string
 }) {
   return (
-    <div className="band-context">
-      <Avatar className="band-avatar" aria-hidden="true">
-        <AvatarFallback className="band-avatar-fallback">
+    <div className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-ui-10">
+      <Avatar
+        className="size-9 border border-green-100/45 bg-[#163a2a] text-[#dff7ea]"
+        aria-hidden="true"
+      >
+        <AvatarFallback className="bg-transparent text-[0.8125rem] font-extrabold text-inherit">
           {bandInitials(props.account.activeBand.bandName)}
         </AvatarFallback>
       </Avatar>
-      <span className="band-copy">
-        <span className="band-name">{props.account.activeBand.bandName}</span>
-        <span className="band-meta">
+      <span className="grid min-w-0 gap-ui-2 text-right">
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-[750] text-white-100">
+          {props.account.activeBand.bandName}
+        </span>
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-white-300">
           {props.account.user.email} |{' '}
           {props.translate(roleLabelKey(props.account.activeBand.role))}
         </span>
@@ -428,8 +452,8 @@ function ProtectedRoute(props: { redirect: ProtectedRoutePath; children: ReactNo
 
   if (session.state.status === 'loading') {
     return (
-      <div className="workspace-header">
-        <p>{translate('account.loading')}</p>
+      <div className="grid gap-ui-8">
+        <p className="m-0 text-base text-white-300">{translate('account.loading')}</p>
       </div>
     )
   }

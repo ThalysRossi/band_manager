@@ -53,9 +53,9 @@ export function AccountPage(props: AccountPageProps) {
 
   if (session.state.status === 'unauthenticated') {
     return (
-      <section className="account-layout">
+      <section className="grid gap-ui-32">
         <WorkspaceTitle title={props.translate('account.title')} />
-        <p className="account-muted">{props.translate('account.loginRequired')}</p>
+        <p className="m-0 text-white-300">{props.translate('account.loginRequired')}</p>
         <LoginPage translate={props.translate} onLoginSuccess={() => void session.refresh()} />
       </section>
     )
@@ -108,7 +108,7 @@ export function AcceptInvitePage(props: AcceptInvitePageProps) {
 
   if (props.token.trim() === '') {
     return (
-      <section className="account-layout">
+      <section className="grid gap-ui-32">
         <WorkspaceTitle title={props.translate('account.acceptTitle')} />
         <StatusPanel message={props.translate('account.acceptMissingToken')} />
       </section>
@@ -121,9 +121,9 @@ export function AcceptInvitePage(props: AcceptInvitePageProps) {
 
   if (session.state.status === 'unauthenticated') {
     return (
-      <section className="account-layout">
+      <section className="grid gap-ui-32">
         <WorkspaceTitle title={props.translate('account.acceptTitle')} />
-        <p className="account-muted">{props.translate('account.acceptLoginPrompt')}</p>
+        <p className="m-0 text-white-300">{props.translate('account.acceptLoginPrompt')}</p>
         <LoginPage translate={props.translate} onLoginSuccess={() => void session.refresh()} />
       </section>
     )
@@ -131,7 +131,7 @@ export function AcceptInvitePage(props: AcceptInvitePageProps) {
 
   if (acceptedMember !== null) {
     return (
-      <section className="account-layout">
+      <section className="grid gap-ui-32">
         <WorkspaceTitle title={props.translate('account.acceptTitle')} />
         <StatusPanel
           message={`${props.translate('account.acceptSuccess')} ${acceptedMember.email}`}
@@ -141,7 +141,7 @@ export function AcceptInvitePage(props: AcceptInvitePageProps) {
   }
 
   return (
-    <section className="account-layout">
+    <section className="grid gap-ui-32">
       <WorkspaceTitle title={props.translate('account.acceptTitle')} />
       <StatusPanel
         message={
@@ -224,17 +224,19 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
   }
 
   return (
-    <section className="account-layout">
+    <section className="grid gap-ui-32">
       <WorkspaceTitle title={props.translate('account.title')} />
 
       {ownerCanManage ? (
-        <Card className="account-section" aria-labelledby="account-create-invite-title">
+        <Card className="gap-ui-16" aria-labelledby="account-create-invite-title">
           <CardHeader>
-            <h3 id="account-create-invite-title">{props.translate('account.createInviteTitle')}</h3>
+            <h3 id="account-create-invite-title" className="m-0 text-base leading-tight">
+              {props.translate('account.createInviteTitle')}
+            </h3>
           </CardHeader>
-          <CardContent className="account-section-content">
+          <CardContent className="grid gap-ui-16">
             <form
-              className="account-inline-form"
+              className="grid gap-ui-16 min-[800px]:grid-cols-[minmax(0,1fr)_auto]"
               onSubmit={(event) => {
                 event.preventDefault()
                 const values = new FormData(event.currentTarget)
@@ -247,7 +249,7 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
                 createInviteMutation.mutate(email)
               }}
             >
-              <div className="form-field">
+              <div className="grid gap-ui-8">
                 <Label htmlFor="account-invite-email">
                   {props.translate('account.emailLabel')}
                 </Label>
@@ -259,8 +261,10 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
             </form>
             {formStatus === '' ? null : <p role="status">{formStatus}</p>}
             {pendingInviteLink === '' ? null : (
-              <div className="account-token-row">
-                <code>{pendingInviteLink}</code>
+              <div className="grid items-center gap-ui-8 min-[800px]:grid-cols-[minmax(0,1fr)_auto]">
+                <code className="[overflow-wrap:anywhere] rounded-md border border-border bg-black-300 p-ui-10 text-[0.8125rem] text-white-100">
+                  {pendingInviteLink}
+                </code>
                 <Button
                   type="button"
                   variant="secondary"
@@ -280,20 +284,24 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
         </Card>
       ) : null}
 
-      <Card className="account-section" aria-labelledby="account-members-title">
+      <Card className="gap-ui-16" aria-labelledby="account-members-title">
         <CardHeader>
-          <h3 id="account-members-title">{props.translate('account.membersTitle')}</h3>
+          <h3 id="account-members-title" className="m-0 text-base leading-tight">
+            {props.translate('account.membersTitle')}
+          </h3>
         </CardHeader>
-        <CardContent className="account-section-content">
+        <CardContent className="grid gap-ui-16">
           <MembersTable members={overview.members} translate={props.translate} />
         </CardContent>
       </Card>
 
-      <Card className="account-section" aria-labelledby="account-invites-title">
+      <Card className="gap-ui-16" aria-labelledby="account-invites-title">
         <CardHeader>
-          <h3 id="account-invites-title">{props.translate('account.invitesTitle')}</h3>
+          <h3 id="account-invites-title" className="m-0 text-base leading-tight">
+            {props.translate('account.invitesTitle')}
+          </h3>
         </CardHeader>
-        <CardContent className="account-section-content">
+        <CardContent className="grid gap-ui-16">
           <InvitesTable
             invites={overview.invites}
             canManage={ownerCanManage}
@@ -309,27 +317,35 @@ function AuthenticatedAccountPage(props: { accessToken: string; translate: Trans
 
 function MembersTable(props: { members: AccountMember[]; translate: Translate }) {
   if (props.members.length === 0) {
-    return <p className="account-muted">{props.translate('account.noMembers')}</p>
+    return <p className="m-0 text-white-300">{props.translate('account.noMembers')}</p>
   }
 
   return (
-    <div className="account-table-wrap">
-      <Table className="account-table">
+    <div className="overflow-x-auto rounded-md border border-border bg-black-300">
+      <Table className="w-full min-w-[640px] border-collapse text-sm">
         <TableHeader>
           <TableRow>
-            <TableHead>{props.translate('account.emailHeader')}</TableHead>
-            <TableHead>{props.translate('account.roleHeader')}</TableHead>
-            <TableHead>{props.translate('account.joinedAtHeader')}</TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.emailHeader')}
+            </TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.roleHeader')}
+            </TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.joinedAtHeader')}
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {props.members.map((member) => (
             <TableRow key={member.userId}>
-              <TableCell>{member.email}</TableCell>
-              <TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">{member.email}</TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">
                 <Badge variant="secondary">{props.translate(roleLabelKey(member.role))}</Badge>
               </TableCell>
-              <TableCell>{formatDate(member.joinedAt)}</TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">
+                {formatDate(member.joinedAt)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -346,38 +362,50 @@ function InvitesTable(props: {
   onRevoke: (inviteId: string) => void
 }) {
   if (props.invites.length === 0) {
-    return <p className="account-muted">{props.translate('account.noInvites')}</p>
+    return <p className="m-0 text-white-300">{props.translate('account.noInvites')}</p>
   }
 
   return (
-    <div className="account-table-wrap">
-      <Table className="account-table">
+    <div className="overflow-x-auto rounded-md border border-border bg-black-300">
+      <Table className="w-full min-w-[640px] border-collapse text-sm">
         <TableHeader>
           <TableRow>
-            <TableHead>{props.translate('account.emailHeader')}</TableHead>
-            <TableHead>{props.translate('account.roleHeader')}</TableHead>
-            <TableHead>{props.translate('account.statusHeader')}</TableHead>
-            <TableHead>{props.translate('account.expiresAtHeader')}</TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.emailHeader')}
+            </TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.roleHeader')}
+            </TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.statusHeader')}
+            </TableHead>
+            <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+              {props.translate('account.expiresAtHeader')}
+            </TableHead>
             {props.canManage ? (
-              <TableHead>{props.translate('account.actionsHeader')}</TableHead>
+              <TableHead className="px-ui-12 py-ui-10 align-middle font-[750] text-white-200">
+                {props.translate('account.actionsHeader')}
+              </TableHead>
             ) : null}
           </TableRow>
         </TableHeader>
         <TableBody>
           {props.invites.map((invite) => (
             <TableRow key={invite.id}>
-              <TableCell>{invite.email}</TableCell>
-              <TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">{invite.email}</TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">
                 <Badge variant="secondary">{props.translate(roleLabelKey(invite.role))}</Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">
                 <Badge variant={inviteStatusBadgeVariant(invite.status)}>
                   {props.translate(inviteStatusLabelKey(invite.status))}
                 </Badge>
               </TableCell>
-              <TableCell>{formatDate(invite.expiresAt)}</TableCell>
+              <TableCell className="px-ui-12 py-ui-10 align-middle">
+                {formatDate(invite.expiresAt)}
+              </TableCell>
               {props.canManage ? (
-                <TableCell>
+                <TableCell className="px-ui-12 py-ui-10 align-middle">
                   {invite.status === 'pending' ? (
                     <Button
                       type="button"
@@ -401,16 +429,18 @@ function InvitesTable(props: {
 
 function WorkspaceTitle(props: { title: string }) {
   return (
-    <div className="workspace-header">
-      <h2>{props.title}</h2>
+    <div className="grid gap-ui-8">
+      <h2 className="m-0 text-[1.75rem] leading-[1.15]">{props.title}</h2>
     </div>
   )
 }
 
 function StatusPanel(props: { message: string }) {
   return (
-    <div className="workspace-header">
-      <p role="status">{props.message}</p>
+    <div className="grid gap-ui-8">
+      <p className="m-0 text-base text-white-300" role="status">
+        {props.message}
+      </p>
     </div>
   )
 }

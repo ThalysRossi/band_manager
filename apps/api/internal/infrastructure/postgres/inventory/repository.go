@@ -38,11 +38,12 @@ func (repository Repository) CreateProduct(ctx context.Context, command applicat
 	_, err = tx.Exec(ctx, `
 		INSERT INTO merch_products (
 			id, band_id, name, normalized_name, category,
-			photo_object_key, photo_content_type, photo_size_bytes,
+			photo_full_object_key, photo_full_content_type, photo_full_size_bytes, photo_full_width, photo_full_height,
+			photo_display_object_key, photo_display_content_type, photo_display_size_bytes, photo_display_width, photo_display_height,
 			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-	`, productID, command.Account.BandID, command.Name, command.NormalizedName, command.Category, command.Photo.ObjectKey, command.Photo.ContentType, command.Photo.SizeBytes, command.CreatedAt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+	`, productID, command.Account.BandID, command.Name, command.NormalizedName, command.Category, command.Photo.Full.ObjectKey, command.Photo.Full.ContentType, command.Photo.Full.SizeBytes, command.Photo.Full.Width, command.Photo.Full.Height, command.Photo.Display.ObjectKey, command.Photo.Display.ContentType, command.Photo.Display.SizeBytes, command.Photo.Display.Width, command.Photo.Display.Height, command.CreatedAt)
 	if err != nil {
 		return applicationinventory.Product{}, mapPostgresError(err, fmt.Sprintf("insert inventory product band_id=%q name=%q category=%q", command.Account.BandID, command.Name, command.Category))
 	}
@@ -110,7 +111,8 @@ func (repository Repository) CreateProduct(ctx context.Context, command applicat
 func (repository Repository) ListInventory(ctx context.Context, query applicationinventory.ListInventoryQuery) ([]applicationinventory.Product, error) {
 	rows, err := repository.pool.Query(ctx, `
 		SELECT id, band_id, name, normalized_name, category,
-			photo_object_key, photo_content_type, photo_size_bytes,
+			photo_full_object_key, photo_full_content_type, photo_full_size_bytes, photo_full_width, photo_full_height,
+			photo_display_object_key, photo_display_content_type, photo_display_size_bytes, photo_display_width, photo_display_height,
 			created_at, updated_at
 		FROM merch_products
 		WHERE band_id = $1 AND deleted_at IS NULL
@@ -182,12 +184,19 @@ func (repository Repository) UpdateProduct(ctx context.Context, command applicat
 		SET name = $1,
 			normalized_name = $2,
 			category = $3,
-			photo_object_key = $4,
-			photo_content_type = $5,
-			photo_size_bytes = $6,
-			updated_at = $7
-		WHERE id = $8 AND band_id = $9 AND deleted_at IS NULL
-	`, command.Name, command.NormalizedName, command.Category, command.Photo.ObjectKey, command.Photo.ContentType, command.Photo.SizeBytes, command.UpdatedAt, command.ProductID, command.Account.BandID)
+			photo_full_object_key = $4,
+			photo_full_content_type = $5,
+			photo_full_size_bytes = $6,
+			photo_full_width = $7,
+			photo_full_height = $8,
+			photo_display_object_key = $9,
+			photo_display_content_type = $10,
+			photo_display_size_bytes = $11,
+			photo_display_width = $12,
+			photo_display_height = $13,
+			updated_at = $14
+		WHERE id = $15 AND band_id = $16 AND deleted_at IS NULL
+	`, command.Name, command.NormalizedName, command.Category, command.Photo.Full.ObjectKey, command.Photo.Full.ContentType, command.Photo.Full.SizeBytes, command.Photo.Full.Width, command.Photo.Full.Height, command.Photo.Display.ObjectKey, command.Photo.Display.ContentType, command.Photo.Display.SizeBytes, command.Photo.Display.Width, command.Photo.Display.Height, command.UpdatedAt, command.ProductID, command.Account.BandID)
 	if err != nil {
 		return applicationinventory.Product{}, mapPostgresError(err, fmt.Sprintf("update inventory product band_id=%q product_id=%q", command.Account.BandID, command.ProductID))
 	}
@@ -353,7 +362,8 @@ func (repository Repository) SoftDeleteVariant(ctx context.Context, command appl
 func getProductByID(ctx context.Context, tx pgx.Tx, bandID string, productID string) (applicationinventory.Product, error) {
 	row := tx.QueryRow(ctx, `
 		SELECT id, band_id, name, normalized_name, category,
-			photo_object_key, photo_content_type, photo_size_bytes,
+			photo_full_object_key, photo_full_content_type, photo_full_size_bytes, photo_full_width, photo_full_height,
+			photo_display_object_key, photo_display_content_type, photo_display_size_bytes, photo_display_width, photo_display_height,
 			created_at, updated_at
 		FROM merch_products
 		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
@@ -421,9 +431,16 @@ func scanProduct(row pgx.Row) (applicationinventory.Product, error) {
 		&product.Name,
 		&product.NormalizedName,
 		&categoryValue,
-		&product.Photo.ObjectKey,
-		&product.Photo.ContentType,
-		&product.Photo.SizeBytes,
+		&product.Photo.Full.ObjectKey,
+		&product.Photo.Full.ContentType,
+		&product.Photo.Full.SizeBytes,
+		&product.Photo.Full.Width,
+		&product.Photo.Full.Height,
+		&product.Photo.Display.ObjectKey,
+		&product.Photo.Display.ContentType,
+		&product.Photo.Display.SizeBytes,
+		&product.Photo.Display.Width,
+		&product.Photo.Display.Height,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)

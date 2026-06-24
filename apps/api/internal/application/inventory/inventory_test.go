@@ -17,7 +17,7 @@ func TestCreateProductRequiresOwnerWriteAccess(t *testing.T) {
 	input := validCreateProductInput()
 	input.Account.Role = permissions.RoleViewer
 
-	_, err := CreateProduct(context.Background(), &repository, input)
+	_, err := CreateProduct(context.Background(), &repository, &fakePhotoStorage{}, input)
 	if err == nil {
 		t.Fatal("expected role validation error")
 	}
@@ -37,7 +37,7 @@ func TestCreateProductRejectsDuplicateVariants(t *testing.T) {
 		Quantity:    1,
 	})
 
-	_, err := CreateProduct(context.Background(), &repository, input)
+	_, err := CreateProduct(context.Background(), &repository, &fakePhotoStorage{}, input)
 	if err == nil {
 		t.Fatal("expected duplicate variant validation error")
 	}
@@ -49,9 +49,12 @@ func TestCreateProductStoresValidatedCommand(t *testing.T) {
 	repository := fakeRepository{
 		product: Product{ID: "product_1"},
 	}
+	storage := fakePhotoStorage{
+		objects: validPhotoStorageObjects(),
+	}
 	input := validCreateProductInput()
 
-	_, err := CreateProduct(context.Background(), &repository, input)
+	_, err := CreateProduct(context.Background(), &repository, &storage, input)
 	if err != nil {
 		t.Fatalf("create product: %v", err)
 	}
@@ -66,6 +69,45 @@ func TestCreateProductStoresValidatedCommand(t *testing.T) {
 
 	if repository.createCommand.CreatedAt.Location() != time.UTC {
 		t.Fatalf("expected UTC created at, got %s", repository.createCommand.CreatedAt.Location())
+	}
+}
+
+func TestCreateProductRejectsMissingPhotoObject(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeRepository{}
+	storage := fakePhotoStorage{}
+	input := validCreateProductInput()
+
+	_, err := CreateProduct(context.Background(), &repository, &storage, input)
+	if err == nil {
+		t.Fatal("expected photo storage validation error")
+	}
+}
+
+func TestCreateProductRejectsMismatchedPhotoObject(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeRepository{}
+	storage := fakePhotoStorage{
+		objects: map[string]PhotoObjectInfo{
+			"bands/band_1/inventory/photos/photo/full.webp": {
+				ObjectKey:   "bands/band_1/inventory/photos/photo/full.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   9999,
+			},
+			"bands/band_1/inventory/photos/photo/display.webp": {
+				ObjectKey:   "bands/band_1/inventory/photos/photo/display.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   512,
+			},
+		},
+	}
+	input := validCreateProductInput()
+
+	_, err := CreateProduct(context.Background(), &repository, &storage, input)
+	if err == nil {
+		t.Fatal("expected photo storage mismatch validation error")
 	}
 }
 
@@ -133,9 +175,20 @@ func validCreateProductInput() CreateProductInput {
 		Name:     " Camiseta   Logo ",
 		Category: "shirt",
 		Photo: PhotoInput{
-			ObjectKey:   "bands/band_1/products/photo.jpg",
-			ContentType: "image/jpeg",
-			SizeBytes:   1200,
+			Full: PhotoVariantInput{
+				ObjectKey:   "bands/band_1/inventory/photos/photo/full.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   1024,
+				Width:       1200,
+				Height:      900,
+			},
+			Display: PhotoVariantInput{
+				ObjectKey:   "bands/band_1/inventory/photos/photo/display.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   512,
+				Width:       1280,
+				Height:      960,
+			},
 		},
 		Variants: []VariantInput{
 			{
@@ -166,6 +219,11 @@ type fakeRepository struct {
 	products      []Product
 	createCommand CreateProductCommand
 	err           error
+}
+
+type fakePhotoStorage struct {
+	objects map[string]PhotoObjectInfo
+	err     error
 }
 
 func (repository *fakeRepository) CreateProduct(ctx context.Context, command CreateProductCommand) (Product, error) {
@@ -231,4 +289,52 @@ func (repository *fakeRepository) SoftDeleteVariant(ctx context.Context, command
 	}
 
 	return repository.err
+}
+
+func (storage *fakePhotoStorage) CreateSignedUpload(ctx context.Context, command CreatePhotoUploadCommand) (SignedPhotoUpload, error) {
+	if ctx == nil {
+		return SignedPhotoUpload{}, errors.New("context is required")
+	}
+
+	if storage.err != nil {
+		return SignedPhotoUpload{}, storage.err
+	}
+
+	return SignedPhotoUpload{}, nil
+}
+
+func (storage *fakePhotoStorage) GetObjectInfo(ctx context.Context, query PhotoObjectInfoQuery) (PhotoObjectInfo, error) {
+	if ctx == nil {
+		return PhotoObjectInfo{}, errors.New("context is required")
+	}
+
+	if storage.err != nil {
+		return PhotoObjectInfo{}, storage.err
+	}
+
+	object, ok := storage.objects[query.ObjectKey]
+	if !ok {
+		return PhotoObjectInfo{}, ErrPhotoObjectNotFound
+	}
+
+	return object, nil
+}
+
+func (storage *fakePhotoStorage) PublicURL(objectKey string) string {
+	return "https://storage.example/" + objectKey
+}
+
+func validPhotoStorageObjects() map[string]PhotoObjectInfo {
+	return map[string]PhotoObjectInfo{
+		"bands/band_1/inventory/photos/photo/full.webp": {
+			ObjectKey:   "bands/band_1/inventory/photos/photo/full.webp",
+			ContentType: inventorydomain.PhotoContentTypeWebP,
+			SizeBytes:   1024,
+		},
+		"bands/band_1/inventory/photos/photo/display.webp": {
+			ObjectKey:   "bands/band_1/inventory/photos/photo/display.webp",
+			ContentType: inventorydomain.PhotoContentTypeWebP,
+			SizeBytes:   512,
+		},
+	}
 }

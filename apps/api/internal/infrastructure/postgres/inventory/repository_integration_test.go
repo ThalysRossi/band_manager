@@ -118,28 +118,28 @@ func TestRepositoryCreateProductRejectsDatabaseConstraints(t *testing.T) {
 			constraints: []string{"merch_variants_quantity_check"},
 		},
 		{
-			name: "empty photo object key",
+			name: "empty full photo object key",
 			update: func(command applicationinventory.CreateProductCommand) applicationinventory.CreateProductCommand {
-				command.Photo.ObjectKey = " "
+				command.Photo.Full.ObjectKey = " "
 				return command
 			},
-			constraints: []string{"merch_products_photo_object_key_present_check"},
+			constraints: []string{"merch_products_photo_full_object_key_present_check"},
 		},
 		{
-			name: "empty photo content type",
+			name: "invalid full photo content type",
 			update: func(command applicationinventory.CreateProductCommand) applicationinventory.CreateProductCommand {
-				command.Photo.ContentType = " "
+				command.Photo.Full.ContentType = "image/jpeg"
 				return command
 			},
-			constraints: []string{"merch_products_photo_content_type_present_check"},
+			constraints: []string{"merch_products_photo_full_content_type_check"},
 		},
 		{
-			name: "non-positive photo size",
+			name: "non-positive display photo size",
 			update: func(command applicationinventory.CreateProductCommand) applicationinventory.CreateProductCommand {
-				command.Photo.SizeBytes = 0
+				command.Photo.Display.SizeBytes = 0
 				return command
 			},
-			constraints: []string{"merch_products_photo_size_bytes_check"},
+			constraints: []string{"merch_products_photo_display_size_bytes_check"},
 		},
 	}
 
@@ -304,9 +304,20 @@ func TestRepositoryUpdateProductWritesAuditLog(t *testing.T) {
 		NormalizedName: "camisa atualizada",
 		Category:       inventorydomain.CategoryShirt,
 		Photo: inventorydomain.PhotoMetadata{
-			ObjectKey:   "bands/test/products/updated.jpg",
-			ContentType: "image/jpeg",
-			SizeBytes:   2048,
+			Full: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/updated/full.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   2048,
+				Width:       1200,
+				Height:      900,
+			},
+			Display: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/updated/display.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   1024,
+				Width:       1280,
+				Height:      960,
+			},
 		},
 		IdempotencyKey: "idem_update_product",
 		RequestID:      "request_update_product",
@@ -542,9 +553,20 @@ func validCreateProductCommand(account applicationinventory.AccountContext, name
 		NormalizedName: strings.ToLower(name),
 		Category:       inventorydomain.CategoryShirt,
 		Photo: inventorydomain.PhotoMetadata{
-			ObjectKey:   "bands/test/products/photo.jpg",
-			ContentType: "image/jpeg",
-			SizeBytes:   1024,
+			Full: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/photo/full.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   1024,
+				Width:       1200,
+				Height:      900,
+			},
+			Display: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/photo/display.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   512,
+				Width:       1280,
+				Height:      960,
+			},
 		},
 		Variants: []applicationinventory.CreateVariantCommand{
 			{

@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrDuplicateProduct  = errors.New("duplicate inventory product")
-	ErrDuplicateVariant  = errors.New("duplicate inventory variant")
-	ErrInventoryNotFound = errors.New("inventory record not found")
+	ErrDuplicateProduct    = errors.New("duplicate inventory product")
+	ErrDuplicateVariant    = errors.New("duplicate inventory variant")
+	ErrInventoryNotFound   = errors.New("inventory record not found")
+	ErrPhotoObjectNotFound = errors.New("inventory photo object not found")
 )
 
 type Repository interface {
@@ -25,6 +26,12 @@ type Repository interface {
 	UpdateVariant(ctx context.Context, command UpdateVariantCommand) (Variant, error)
 	SoftDeleteProduct(ctx context.Context, command SoftDeleteProductCommand) error
 	SoftDeleteVariant(ctx context.Context, command SoftDeleteVariantCommand) error
+}
+
+type PhotoStorage interface {
+	CreateSignedUpload(ctx context.Context, command CreatePhotoUploadCommand) (SignedPhotoUpload, error)
+	GetObjectInfo(ctx context.Context, query PhotoObjectInfoQuery) (PhotoObjectInfo, error)
+	PublicURL(objectKey string) string
 }
 
 type AccountContext struct {
@@ -39,9 +46,57 @@ type MoneyInput struct {
 }
 
 type PhotoInput struct {
+	Full    PhotoVariantInput
+	Display PhotoVariantInput
+}
+
+type PhotoVariantInput struct {
 	ObjectKey   string
 	ContentType string
 	SizeBytes   int
+	Width       int
+	Height      int
+}
+
+type PhotoUploadVariantInput struct {
+	ContentType string
+	SizeBytes   int
+	Width       int
+	Height      int
+}
+
+type CreatePhotoUploadInput struct {
+	Account AccountContext
+	Full    PhotoUploadVariantInput
+	Display PhotoUploadVariantInput
+}
+
+type CreatePhotoUploadCommand struct {
+	ObjectKey string
+}
+
+type PhotoObjectInfoQuery struct {
+	ObjectKey string
+}
+
+type PhotoObjectInfo struct {
+	ObjectKey   string
+	ContentType string
+	SizeBytes   int
+}
+
+type SignedPhotoUpload struct {
+	ObjectKey string
+	SignedURL string
+	Token     string
+	ExpiresAt time.Time
+	PublicURL string
+}
+
+type PhotoUploadRequest struct {
+	Photo   inventorydomain.PhotoMetadata
+	Full    SignedPhotoUpload
+	Display SignedPhotoUpload
 }
 
 type VariantInput struct {
@@ -188,9 +243,13 @@ type Variant struct {
 	UpdatedAt        time.Time
 }
 
-func CreateProduct(ctx context.Context, repository Repository, input CreateProductInput) (Product, error) {
+func CreateProduct(ctx context.Context, repository Repository, photoStorage PhotoStorage, input CreateProductInput) (Product, error) {
 	command, err := validateCreateProductInput(input)
 	if err != nil {
+		return Product{}, err
+	}
+
+	if err := verifyPhotoObjects(ctx, photoStorage, command.Photo); err != nil {
 		return Product{}, err
 	}
 
@@ -216,9 +275,13 @@ func ListInventory(ctx context.Context, repository Repository, input ListInvento
 	return products, nil
 }
 
-func UpdateProduct(ctx context.Context, repository Repository, input UpdateProductInput) (Product, error) {
+func UpdateProduct(ctx context.Context, repository Repository, photoStorage PhotoStorage, input UpdateProductInput) (Product, error) {
 	command, err := validateUpdateProductInput(input)
 	if err != nil {
+		return Product{}, err
+	}
+
+	if err := verifyPhotoObjects(ctx, photoStorage, command.Photo); err != nil {
 		return Product{}, err
 	}
 
@@ -228,6 +291,29 @@ func UpdateProduct(ctx context.Context, repository Repository, input UpdateProdu
 	}
 
 	return product, nil
+}
+
+func CreatePhotoUpload(ctx context.Context, photoStorage PhotoStorage, input CreatePhotoUploadInput) (PhotoUploadRequest, error) {
+	photo, err := validatePhotoUploadInput(input)
+	if err != nil {
+		return PhotoUploadRequest{}, err
+	}
+
+	fullUpload, err := createSignedUpload(ctx, photoStorage, photo.Full)
+	if err != nil {
+		return PhotoUploadRequest{}, err
+	}
+
+	displayUpload, err := createSignedUpload(ctx, photoStorage, photo.Display)
+	if err != nil {
+		return PhotoUploadRequest{}, err
+	}
+
+	return PhotoUploadRequest{
+		Photo:   photo,
+		Full:    fullUpload,
+		Display: displayUpload,
+	}, nil
 }
 
 func UpdateVariant(ctx context.Context, repository Repository, input UpdateVariantInput) (Variant, error) {
@@ -448,15 +534,105 @@ func validateProductFields(nameInput string, categoryInput string, photoInput Ph
 	}
 
 	photo := inventorydomain.PhotoMetadata{
-		ObjectKey:   strings.TrimSpace(photoInput.ObjectKey),
-		ContentType: strings.TrimSpace(photoInput.ContentType),
-		SizeBytes:   photoInput.SizeBytes,
+		Full:    toPhotoVariantMetadata(photoInput.Full),
+		Display: toPhotoVariantMetadata(photoInput.Display),
 	}
 	if err := inventorydomain.ValidatePhotoMetadata(photo); err != nil {
 		return "", "", "", inventorydomain.PhotoMetadata{}, err
 	}
 
 	return name, category, identity.NormalizedName, photo, nil
+}
+
+func validatePhotoUploadInput(input CreatePhotoUploadInput) (inventorydomain.PhotoMetadata, error) {
+	if err := validateWriteAccount(input.Account); err != nil {
+		return inventorydomain.PhotoMetadata{}, err
+	}
+
+	photoID := uuid.NewString()
+	photo := inventorydomain.PhotoMetadata{
+		Full: inventorydomain.PhotoVariantMetadata{
+			ObjectKey:   "bands/" + input.Account.BandID + "/inventory/photos/" + photoID + "/full.webp",
+			ContentType: strings.TrimSpace(input.Full.ContentType),
+			SizeBytes:   input.Full.SizeBytes,
+			Width:       input.Full.Width,
+			Height:      input.Full.Height,
+		},
+		Display: inventorydomain.PhotoVariantMetadata{
+			ObjectKey:   "bands/" + input.Account.BandID + "/inventory/photos/" + photoID + "/display.webp",
+			ContentType: strings.TrimSpace(input.Display.ContentType),
+			SizeBytes:   input.Display.SizeBytes,
+			Width:       input.Display.Width,
+			Height:      input.Display.Height,
+		},
+	}
+	if err := inventorydomain.ValidatePhotoMetadata(photo); err != nil {
+		return inventorydomain.PhotoMetadata{}, err
+	}
+
+	return photo, nil
+}
+
+func toPhotoVariantMetadata(input PhotoVariantInput) inventorydomain.PhotoVariantMetadata {
+	return inventorydomain.PhotoVariantMetadata{
+		ObjectKey:   strings.TrimSpace(input.ObjectKey),
+		ContentType: strings.TrimSpace(input.ContentType),
+		SizeBytes:   input.SizeBytes,
+		Width:       input.Width,
+		Height:      input.Height,
+	}
+}
+
+func createSignedUpload(ctx context.Context, photoStorage PhotoStorage, photo inventorydomain.PhotoVariantMetadata) (SignedPhotoUpload, error) {
+	if photoStorage == nil {
+		return SignedPhotoUpload{}, fmt.Errorf("inventory photo storage is required")
+	}
+
+	upload, err := photoStorage.CreateSignedUpload(ctx, CreatePhotoUploadCommand{ObjectKey: photo.ObjectKey})
+	if err != nil {
+		return SignedPhotoUpload{}, fmt.Errorf("create signed inventory photo upload object_key=%q: %w", photo.ObjectKey, err)
+	}
+
+	return SignedPhotoUpload{
+		ObjectKey: upload.ObjectKey,
+		SignedURL: upload.SignedURL,
+		Token:     upload.Token,
+		ExpiresAt: upload.ExpiresAt,
+		PublicURL: photoStorage.PublicURL(photo.ObjectKey),
+	}, nil
+}
+
+func verifyPhotoObjects(ctx context.Context, photoStorage PhotoStorage, photo inventorydomain.PhotoMetadata) error {
+	if photoStorage == nil {
+		return fmt.Errorf("inventory photo storage is required")
+	}
+
+	if err := verifyPhotoObject(ctx, photoStorage, "full", photo.Full); err != nil {
+		return err
+	}
+
+	if err := verifyPhotoObject(ctx, photoStorage, "display", photo.Display); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func verifyPhotoObject(ctx context.Context, photoStorage PhotoStorage, label string, photo inventorydomain.PhotoVariantMetadata) error {
+	object, err := photoStorage.GetObjectInfo(ctx, PhotoObjectInfoQuery{ObjectKey: photo.ObjectKey})
+	if err != nil {
+		return fmt.Errorf("verify %s inventory photo object object_key=%q: %w", label, photo.ObjectKey, err)
+	}
+
+	if strings.TrimSpace(object.ContentType) != photo.ContentType {
+		return fmt.Errorf("%s inventory photo content type mismatch object_key=%q expected=%q actual=%q", label, photo.ObjectKey, photo.ContentType, object.ContentType)
+	}
+
+	if object.SizeBytes != photo.SizeBytes {
+		return fmt.Errorf("%s inventory photo size mismatch object_key=%q expected=%d actual=%d", label, photo.ObjectKey, photo.SizeBytes, object.SizeBytes)
+	}
+
+	return nil
 }
 
 func validateCreateVariantInputs(inputs []VariantInput) ([]CreateVariantCommand, error) {

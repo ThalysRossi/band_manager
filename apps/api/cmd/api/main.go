@@ -52,6 +52,11 @@ func main() {
 		appLogger.Error("supabase verified user inspector creation failed", "error", err)
 		os.Exit(1)
 	}
+	photoStorage, err := supabase.NewStorageClient(appConfig.SupabaseURL, appConfig.SupabaseServiceRoleKey, appConfig.SupabaseStorageBucket, supabaseHTTPClient, appLogger)
+	if err != nil {
+		appLogger.Error("supabase storage client creation failed", "error", err)
+		os.Exit(1)
+	}
 
 	accountRepository := postgresaccount.NewRepository(databasePool)
 	inventoryRepository := postgresinventory.NewRepository(databasePool)
@@ -70,6 +75,7 @@ func main() {
 			VerifiedUserInspector:      verifiedUserInspector,
 			AccountRepository:          accountRepository,
 			InventoryRepository:        inventoryRepository,
+			PhotoStorage:               photoStorage,
 			MerchBoothRepository:       merchBoothRepository,
 			FinancialReportsRepository: financialReportsRepository,
 			CalendarRepository:         calendarRepository,

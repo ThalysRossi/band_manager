@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	applicationinventory "github.com/thalys/band-manager/apps/api/internal/application/inventory"
 	applicationmerchbooth "github.com/thalys/band-manager/apps/api/internal/application/merchbooth"
+	inventorydomain "github.com/thalys/band-manager/apps/api/internal/domain/inventory"
 	authhandler "github.com/thalys/band-manager/apps/api/internal/transport/http/auth"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware"
 	"github.com/thalys/band-manager/apps/api/internal/transport/middleware/authcontext"
@@ -19,6 +21,7 @@ import (
 type Handler struct {
 	merchRepository            applicationmerchbooth.Repository
 	paymentProvider            applicationmerchbooth.PaymentProvider
+	photoStorage               applicationinventory.PhotoStorage
 	mercadoPagoWebhookSecret   string
 	mercadoPagoPointTerminalID string
 	logger                     *slog.Logger
@@ -137,15 +140,24 @@ type MoneyResponse struct {
 }
 
 type PhotoResponse struct {
+	Full    PhotoVariantResponse `json:"full"`
+	Display PhotoVariantResponse `json:"display"`
+}
+
+type PhotoVariantResponse struct {
 	ObjectKey   string `json:"objectKey"`
 	ContentType string `json:"contentType"`
 	SizeBytes   int    `json:"sizeBytes"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	PublicURL   string `json:"publicUrl"`
 }
 
-func NewHandler(merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, mercadoPagoWebhookSecret string, mercadoPagoPointTerminalID string, logger *slog.Logger) Handler {
+func NewHandler(merchRepository applicationmerchbooth.Repository, paymentProvider applicationmerchbooth.PaymentProvider, photoStorage applicationinventory.PhotoStorage, mercadoPagoWebhookSecret string, mercadoPagoPointTerminalID string, logger *slog.Logger) Handler {
 	return Handler{
 		merchRepository:            merchRepository,
 		paymentProvider:            paymentProvider,
+		photoStorage:               photoStorage,
 		mercadoPagoWebhookSecret:   strings.TrimSpace(mercadoPagoWebhookSecret),
 		mercadoPagoPointTerminalID: strings.TrimSpace(mercadoPagoPointTerminalID),
 		logger:                     logger,
@@ -167,7 +179,7 @@ func (handler Handler) ListBoothItems(response http.ResponseWriter, request *htt
 		return
 	}
 
-	handler.writeJSON(response, http.StatusOK, BoothItemsResponse{Items: toBoothItemResponses(items)})
+	handler.writeJSON(response, http.StatusOK, BoothItemsResponse{Items: toBoothItemResponses(handler.photoStorage, items)})
 }
 
 func (handler Handler) CreateCashCheckout(response http.ResponseWriter, request *http.Request) {
@@ -442,7 +454,7 @@ func toCartItemInputs(response http.ResponseWriter, requests []CartItemRequest) 
 	return items, true
 }
 
-func toBoothItemResponses(items []applicationmerchbooth.BoothItem) []BoothItemResponse {
+func toBoothItemResponses(photoStorage applicationinventory.PhotoStorage, items []applicationmerchbooth.BoothItem) []BoothItemResponse {
 	responses := make([]BoothItemResponse, 0, len(items))
 	for _, item := range items {
 		responses = append(responses, BoothItemResponse{
@@ -456,15 +468,29 @@ func toBoothItemResponses(items []applicationmerchbooth.BoothItem) []BoothItemRe
 			Cost:        toMoneyResponse(item.Cost.Amount, item.Cost.Currency),
 			Quantity:    item.Quantity,
 			SoldOut:     item.SoldOut,
-			Photo: PhotoResponse{
-				ObjectKey:   item.Photo.ObjectKey,
-				ContentType: item.Photo.ContentType,
-				SizeBytes:   item.Photo.SizeBytes,
-			},
+			Photo:       toPhotoResponse(photoStorage, item.Photo),
 		})
 	}
 
 	return responses
+}
+
+func toPhotoResponse(photoStorage applicationinventory.PhotoStorage, photo inventorydomain.PhotoMetadata) PhotoResponse {
+	return PhotoResponse{
+		Full:    toPhotoVariantResponse(photoStorage, photo.Full),
+		Display: toPhotoVariantResponse(photoStorage, photo.Display),
+	}
+}
+
+func toPhotoVariantResponse(photoStorage applicationinventory.PhotoStorage, photo inventorydomain.PhotoVariantMetadata) PhotoVariantResponse {
+	return PhotoVariantResponse{
+		ObjectKey:   photo.ObjectKey,
+		ContentType: photo.ContentType,
+		SizeBytes:   photo.SizeBytes,
+		Width:       photo.Width,
+		Height:      photo.Height,
+		PublicURL:   photoStorage.PublicURL(photo.ObjectKey),
+	}
 }
 
 func toSaleResponse(sale applicationmerchbooth.Sale) SaleResponse {

@@ -19,6 +19,7 @@ import (
 
 type Handler struct {
 	inventoryRepository applicationinventory.Repository
+	photoStorage        applicationinventory.PhotoStorage
 	logger              *slog.Logger
 	now                 func() time.Time
 }
@@ -50,9 +51,46 @@ type MoneyRequest struct {
 }
 
 type PhotoRequest struct {
+	Full    PhotoVariantRequest `json:"full"`
+	Display PhotoVariantRequest `json:"display"`
+}
+
+type PhotoVariantRequest struct {
 	ObjectKey   string `json:"objectKey"`
 	ContentType string `json:"contentType"`
 	SizeBytes   *int   `json:"sizeBytes"`
+	Width       *int   `json:"width"`
+	Height      *int   `json:"height"`
+}
+
+type PhotoUploadRequest struct {
+	Full    PhotoUploadVariantRequest `json:"full"`
+	Display PhotoUploadVariantRequest `json:"display"`
+}
+
+type PhotoUploadVariantRequest struct {
+	ContentType string `json:"contentType"`
+	SizeBytes   *int   `json:"sizeBytes"`
+	Width       *int   `json:"width"`
+	Height      *int   `json:"height"`
+}
+
+type PhotoUploadResponse struct {
+	Photo   PhotoResponse              `json:"photo"`
+	Uploads PhotoUploadTargetsResponse `json:"uploads"`
+}
+
+type PhotoUploadTargetsResponse struct {
+	Full    PhotoUploadTargetResponse `json:"full"`
+	Display PhotoUploadTargetResponse `json:"display"`
+}
+
+type PhotoUploadTargetResponse struct {
+	ObjectKey string    `json:"objectKey"`
+	SignedURL string    `json:"signedUrl"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	PublicURL string    `json:"publicUrl"`
 }
 
 type InventoryResponse struct {
@@ -89,17 +127,50 @@ type MoneyResponse struct {
 }
 
 type PhotoResponse struct {
+	Full    PhotoVariantResponse `json:"full"`
+	Display PhotoVariantResponse `json:"display"`
+}
+
+type PhotoVariantResponse struct {
 	ObjectKey   string `json:"objectKey"`
 	ContentType string `json:"contentType"`
 	SizeBytes   int    `json:"sizeBytes"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	PublicURL   string `json:"publicUrl"`
 }
 
-func NewHandler(inventoryRepository applicationinventory.Repository, logger *slog.Logger) Handler {
+func NewHandler(inventoryRepository applicationinventory.Repository, photoStorage applicationinventory.PhotoStorage, logger *slog.Logger) Handler {
 	return Handler{
 		inventoryRepository: inventoryRepository,
+		photoStorage:        photoStorage,
 		logger:              logger,
 		now:                 time.Now,
 	}
+}
+
+func (handler Handler) CreatePhotoUpload(response http.ResponseWriter, request *http.Request) {
+	accountContext, ok := handler.accountContext(response, request)
+	if !ok {
+		return
+	}
+
+	var body PhotoUploadRequest
+	if !handler.decodeJSON(response, request, &body) {
+		return
+	}
+
+	uploadRequest, err := applicationinventory.CreatePhotoUpload(request.Context(), handler.photoStorage, applicationinventory.CreatePhotoUploadInput{
+		Account: accountContext,
+		Full:    toPhotoUploadVariantInput(body.Full),
+		Display: toPhotoUploadVariantInput(body.Display),
+	})
+	if err != nil {
+		handler.writeInventoryError(response, "inventory photo upload request failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusCreated, toPhotoUploadResponse(handler.photoStorage, uploadRequest))
 }
 
 func (handler Handler) CreateProduct(response http.ResponseWriter, request *http.Request) {
@@ -123,7 +194,7 @@ func (handler Handler) CreateProduct(response http.ResponseWriter, request *http
 		return
 	}
 
-	product, err := applicationinventory.CreateProduct(request.Context(), handler.inventoryRepository, applicationinventory.CreateProductInput{
+	product, err := applicationinventory.CreateProduct(request.Context(), handler.inventoryRepository, handler.photoStorage, applicationinventory.CreateProductInput{
 		Account:        accountContext,
 		Name:           body.Name,
 		Category:       body.Category,
@@ -138,7 +209,7 @@ func (handler Handler) CreateProduct(response http.ResponseWriter, request *http
 		return
 	}
 
-	handler.writeJSON(response, http.StatusCreated, toProductResponse(product))
+	handler.writeJSON(response, http.StatusCreated, toProductResponse(handler.photoStorage, product))
 }
 
 func (handler Handler) ListInventory(response http.ResponseWriter, request *http.Request) {
@@ -155,7 +226,7 @@ func (handler Handler) ListInventory(response http.ResponseWriter, request *http
 		return
 	}
 
-	handler.writeJSON(response, http.StatusOK, InventoryResponse{Products: toProductResponses(products)})
+	handler.writeJSON(response, http.StatusOK, InventoryResponse{Products: toProductResponses(handler.photoStorage, products)})
 }
 
 func (handler Handler) UpdateProduct(response http.ResponseWriter, request *http.Request) {
@@ -174,7 +245,7 @@ func (handler Handler) UpdateProduct(response http.ResponseWriter, request *http
 		return
 	}
 
-	product, err := applicationinventory.UpdateProduct(request.Context(), handler.inventoryRepository, applicationinventory.UpdateProductInput{
+	product, err := applicationinventory.UpdateProduct(request.Context(), handler.inventoryRepository, handler.photoStorage, applicationinventory.UpdateProductInput{
 		Account:        accountContext,
 		ProductID:      chi.URLParam(request, "productID"),
 		Name:           body.Name,
@@ -189,7 +260,7 @@ func (handler Handler) UpdateProduct(response http.ResponseWriter, request *http
 		return
 	}
 
-	handler.writeJSON(response, http.StatusOK, toProductResponse(product))
+	handler.writeJSON(response, http.StatusOK, toProductResponse(handler.photoStorage, product))
 }
 
 func (handler Handler) UpdateVariant(response http.ResponseWriter, request *http.Request) {
@@ -388,41 +459,96 @@ func toVariantInput(response http.ResponseWriter, request VariantRequest) (appli
 }
 
 func toPhotoInput(request PhotoRequest) applicationinventory.PhotoInput {
-	sizeBytes := 0
-	if request.SizeBytes != nil {
-		sizeBytes = *request.SizeBytes
-	}
-
 	return applicationinventory.PhotoInput{
-		ObjectKey:   request.ObjectKey,
-		ContentType: request.ContentType,
-		SizeBytes:   sizeBytes,
+		Full:    toPhotoVariantInput(request.Full),
+		Display: toPhotoVariantInput(request.Display),
 	}
 }
 
-func toProductResponses(products []applicationinventory.Product) []ProductResponse {
+func toPhotoVariantInput(request PhotoVariantRequest) applicationinventory.PhotoVariantInput {
+	return applicationinventory.PhotoVariantInput{
+		ObjectKey:   request.ObjectKey,
+		ContentType: request.ContentType,
+		SizeBytes:   intPointerValue(request.SizeBytes),
+		Width:       intPointerValue(request.Width),
+		Height:      intPointerValue(request.Height),
+	}
+}
+
+func toPhotoUploadVariantInput(request PhotoUploadVariantRequest) applicationinventory.PhotoUploadVariantInput {
+	return applicationinventory.PhotoUploadVariantInput{
+		ContentType: request.ContentType,
+		SizeBytes:   intPointerValue(request.SizeBytes),
+		Width:       intPointerValue(request.Width),
+		Height:      intPointerValue(request.Height),
+	}
+}
+
+func intPointerValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+
+	return *value
+}
+
+func toProductResponses(photoStorage applicationinventory.PhotoStorage, products []applicationinventory.Product) []ProductResponse {
 	responses := make([]ProductResponse, 0, len(products))
 	for _, product := range products {
-		responses = append(responses, toProductResponse(product))
+		responses = append(responses, toProductResponse(photoStorage, product))
 	}
 
 	return responses
 }
 
-func toProductResponse(product applicationinventory.Product) ProductResponse {
+func toProductResponse(photoStorage applicationinventory.PhotoStorage, product applicationinventory.Product) ProductResponse {
 	return ProductResponse{
-		ID:       product.ID,
-		BandID:   product.BandID,
-		Name:     product.Name,
-		Category: product.Category,
-		Photo: PhotoResponse{
-			ObjectKey:   product.Photo.ObjectKey,
-			ContentType: product.Photo.ContentType,
-			SizeBytes:   product.Photo.SizeBytes,
-		},
+		ID:        product.ID,
+		BandID:    product.BandID,
+		Name:      product.Name,
+		Category:  product.Category,
+		Photo:     toPhotoResponse(photoStorage, product.Photo),
 		Variants:  toVariantResponses(product.Variants),
 		CreatedAt: product.CreatedAt,
 		UpdatedAt: product.UpdatedAt,
+	}
+}
+
+func toPhotoUploadResponse(photoStorage applicationinventory.PhotoStorage, uploadRequest applicationinventory.PhotoUploadRequest) PhotoUploadResponse {
+	return PhotoUploadResponse{
+		Photo: toPhotoResponse(photoStorage, uploadRequest.Photo),
+		Uploads: PhotoUploadTargetsResponse{
+			Full:    toPhotoUploadTargetResponse(uploadRequest.Full),
+			Display: toPhotoUploadTargetResponse(uploadRequest.Display),
+		},
+	}
+}
+
+func toPhotoUploadTargetResponse(upload applicationinventory.SignedPhotoUpload) PhotoUploadTargetResponse {
+	return PhotoUploadTargetResponse{
+		ObjectKey: upload.ObjectKey,
+		SignedURL: upload.SignedURL,
+		Token:     upload.Token,
+		ExpiresAt: upload.ExpiresAt,
+		PublicURL: upload.PublicURL,
+	}
+}
+
+func toPhotoResponse(photoStorage applicationinventory.PhotoStorage, photo inventorydomain.PhotoMetadata) PhotoResponse {
+	return PhotoResponse{
+		Full:    toPhotoVariantResponse(photoStorage, photo.Full),
+		Display: toPhotoVariantResponse(photoStorage, photo.Display),
+	}
+}
+
+func toPhotoVariantResponse(photoStorage applicationinventory.PhotoStorage, photo inventorydomain.PhotoVariantMetadata) PhotoVariantResponse {
+	return PhotoVariantResponse{
+		ObjectKey:   photo.ObjectKey,
+		ContentType: photo.ContentType,
+		SizeBytes:   photo.SizeBytes,
+		Width:       photo.Width,
+		Height:      photo.Height,
+		PublicURL:   photoStorage.PublicURL(photo.ObjectKey),
 	}
 }
 

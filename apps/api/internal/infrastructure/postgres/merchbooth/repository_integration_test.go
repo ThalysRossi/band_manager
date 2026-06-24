@@ -623,9 +623,20 @@ func createInventoryProduct(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 		NormalizedName: strings.ToLower(name),
 		Category:       inventorydomain.CategoryShirt,
 		Photo: inventorydomain.PhotoMetadata{
-			ObjectKey:   "bands/test/products/photo.jpg",
-			ContentType: "image/jpeg",
-			SizeBytes:   1024,
+			Full: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/photo/full.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   1024,
+				Width:       1200,
+				Height:      900,
+			},
+			Display: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   "bands/test/products/photo/display.webp",
+				ContentType: inventorydomain.PhotoContentTypeWebP,
+				SizeBytes:   512,
+				Width:       1280,
+				Height:      960,
+			},
 		},
 		Variants: []applicationinventory.CreateVariantCommand{
 			{

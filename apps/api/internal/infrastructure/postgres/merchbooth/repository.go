@@ -50,6 +50,8 @@ type boothVariantRow struct {
 	PhotoKey    string
 	PhotoType   string
 	PhotoSize   int
+	PhotoWidth  int
+	PhotoHeight int
 }
 
 type checkoutLine struct {
@@ -76,9 +78,11 @@ func (repository Repository) ListBoothItems(ctx context.Context, query applicati
 			merch_variants.cost_amount,
 			merch_variants.currency,
 			merch_variants.quantity,
-			merch_products.photo_object_key,
-			merch_products.photo_content_type,
-			merch_products.photo_size_bytes
+			merch_products.photo_display_object_key,
+			merch_products.photo_display_content_type,
+			merch_products.photo_display_size_bytes,
+			merch_products.photo_display_width,
+			merch_products.photo_display_height
 		FROM merch_variants
 		INNER JOIN merch_products ON merch_products.id = merch_variants.product_id
 		WHERE merch_variants.band_id = $1
@@ -1263,9 +1267,11 @@ func lockCheckoutVariants(ctx context.Context, tx pgx.Tx, command applicationmer
 				merch_variants.cost_amount,
 				merch_variants.currency,
 				merch_variants.quantity,
-				merch_products.photo_object_key,
-				merch_products.photo_content_type,
-				merch_products.photo_size_bytes
+				merch_products.photo_display_object_key,
+				merch_products.photo_display_content_type,
+				merch_products.photo_display_size_bytes,
+				merch_products.photo_display_width,
+				merch_products.photo_display_height
 			FROM merch_variants
 			INNER JOIN merch_products ON merch_products.id = merch_variants.product_id
 			WHERE merch_variants.band_id = $1
@@ -1610,6 +1616,8 @@ func scanBoothItem(row pgx.Row) (applicationmerchbooth.BoothItem, error) {
 		&variantRow.PhotoKey,
 		&variantRow.PhotoType,
 		&variantRow.PhotoSize,
+		&variantRow.PhotoWidth,
+		&variantRow.PhotoHeight,
 	)
 	if err != nil {
 		return applicationmerchbooth.BoothItem{}, err
@@ -1636,9 +1644,20 @@ func scanBoothItem(row pgx.Row) (applicationmerchbooth.BoothItem, error) {
 		Cost:        inventorydomain.Money{Amount: variantRow.CostAmount, Currency: variantRow.Currency},
 		Quantity:    variantRow.Quantity,
 		Photo: inventorydomain.PhotoMetadata{
-			ObjectKey:   variantRow.PhotoKey,
-			ContentType: variantRow.PhotoType,
-			SizeBytes:   variantRow.PhotoSize,
+			Full: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   variantRow.PhotoKey,
+				ContentType: variantRow.PhotoType,
+				SizeBytes:   variantRow.PhotoSize,
+				Width:       variantRow.PhotoWidth,
+				Height:      variantRow.PhotoHeight,
+			},
+			Display: inventorydomain.PhotoVariantMetadata{
+				ObjectKey:   variantRow.PhotoKey,
+				ContentType: variantRow.PhotoType,
+				SizeBytes:   variantRow.PhotoSize,
+				Width:       variantRow.PhotoWidth,
+				Height:      variantRow.PhotoHeight,
+			},
 		},
 		SoldOut: variantRow.Quantity == 0,
 	}, nil

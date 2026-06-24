@@ -37,10 +37,28 @@ type Money struct {
 	Currency string
 }
 
+const (
+	PhotoContentTypeWebP     = "image/webp"
+	FullPhotoMaxSizeBytes    = 10 * 1024 * 1024
+	FullPhotoMaxLongestEdge  = 3840
+	DisplayPhotoMaxSizeBytes = 2 * 1024 * 1024
+	DisplayPhotoMaxWidth     = 1280
+	DisplayPhotoMaxHeight    = 960
+	displayPhotoAspectWidth  = 4
+	displayPhotoAspectHeight = 3
+)
+
 type PhotoMetadata struct {
+	Full    PhotoVariantMetadata
+	Display PhotoVariantMetadata
+}
+
+type PhotoVariantMetadata struct {
 	ObjectKey   string
 	ContentType string
 	SizeBytes   int
+	Width       int
+	Height      int
 }
 
 type ProductIdentity struct {
@@ -129,18 +147,54 @@ func ValidateQuantity(quantity int) error {
 }
 
 func ValidatePhotoMetadata(photo PhotoMetadata) error {
+	if err := validatePhotoVariantMetadata("full", photo.Full, FullPhotoMaxSizeBytes, FullPhotoMaxLongestEdge, FullPhotoMaxLongestEdge, false); err != nil {
+		return err
+	}
+
+	if err := validatePhotoVariantMetadata("display", photo.Display, DisplayPhotoMaxSizeBytes, DisplayPhotoMaxWidth, DisplayPhotoMaxHeight, true); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validatePhotoVariantMetadata(label string, photo PhotoVariantMetadata, maxSizeBytes int, maxWidth int, maxHeight int, requireDisplayAspect bool) error {
 	objectKey := strings.TrimSpace(photo.ObjectKey)
 	if objectKey == "" {
-		return fmt.Errorf("photo object key is required")
+		return fmt.Errorf("%s photo object key is required", label)
 	}
 
 	contentType := strings.TrimSpace(photo.ContentType)
-	if contentType == "" {
-		return fmt.Errorf("photo content type is required")
+	if contentType != PhotoContentTypeWebP {
+		return fmt.Errorf("%s photo content type must be %s", label, PhotoContentTypeWebP)
 	}
 
 	if photo.SizeBytes <= 0 {
-		return fmt.Errorf("photo size bytes must be greater than zero")
+		return fmt.Errorf("%s photo size bytes must be greater than zero", label)
+	}
+
+	if photo.SizeBytes > maxSizeBytes {
+		return fmt.Errorf("%s photo size bytes must be at most %d", label, maxSizeBytes)
+	}
+
+	if photo.Width <= 0 {
+		return fmt.Errorf("%s photo width must be greater than zero", label)
+	}
+
+	if photo.Height <= 0 {
+		return fmt.Errorf("%s photo height must be greater than zero", label)
+	}
+
+	if photo.Width > maxWidth {
+		return fmt.Errorf("%s photo width must be at most %d", label, maxWidth)
+	}
+
+	if photo.Height > maxHeight {
+		return fmt.Errorf("%s photo height must be at most %d", label, maxHeight)
+	}
+
+	if requireDisplayAspect && photo.Width*displayPhotoAspectHeight != photo.Height*displayPhotoAspectWidth {
+		return fmt.Errorf("%s photo aspect ratio must be 4:3", label)
 	}
 
 	return nil

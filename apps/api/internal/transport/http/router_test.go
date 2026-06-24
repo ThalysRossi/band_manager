@@ -151,6 +151,59 @@ func TestFinancialReportsRouteRejectsInvalidQueryParams(t *testing.T) {
 	}
 }
 
+func TestInventoryPhotoUploadRequestReturnsSignedTargets(t *testing.T) {
+	t.Parallel()
+
+	dependencies := testDependencies()
+	dependencies.AccountRepository = testAccountRepository{role: permissions.RoleOwner}
+	router := NewRouter(testConfig(), slog.Default(), dependencies)
+	request := httptest.NewRequest(http.MethodPost, "/inventory/photos/upload-requests", strings.NewReader(`{
+		"full": {
+			"contentType": "image/webp",
+			"sizeBytes": 1024,
+			"width": 1200,
+			"height": 900
+		},
+		"display": {
+			"contentType": "image/webp",
+			"sizeBytes": 512,
+			"width": 1280,
+			"height": 960
+		}
+	}`))
+	request.Header.Set("Authorization", "Bearer valid-token")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
+	}
+
+	var body struct {
+		Photo struct {
+			Full struct {
+				ObjectKey string `json:"objectKey"`
+			} `json:"full"`
+		} `json:"photo"`
+		Uploads struct {
+			Full struct {
+				Token string `json:"token"`
+			} `json:"full"`
+		} `json:"uploads"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+
+	if body.Photo.Full.ObjectKey == "" {
+		t.Fatal("expected generated full photo object key")
+	}
+	if body.Uploads.Full.Token != "upload-token" {
+		t.Fatalf("expected upload token, got %q", body.Uploads.Full.Token)
+	}
+}
+
 func TestCalendarEventsRouteReturnsEvents(t *testing.T) {
 	t.Parallel()
 
@@ -398,6 +451,8 @@ func testConfig() config.Config {
 		RedisURL:                   "redis://localhost:6379/0",
 		SupabaseURL:                "https://example.supabase.co",
 		SupabaseAnonKey:            "anon-key",
+		SupabaseServiceRoleKey:     "service-role-key",
+		SupabaseStorageBucket:      "inventory-photos",
 		MercadoPagoAccessToken:     "token",
 		MercadoPagoWebhookSecret:   "webhook_secret",
 		MercadoPagoPointTerminalID: "terminal",
@@ -539,6 +594,30 @@ func (repository testInventoryRepository) SoftDeleteProduct(ctx context.Context,
 
 func (repository testInventoryRepository) SoftDeleteVariant(ctx context.Context, command applicationinventory.SoftDeleteVariantCommand) error {
 	return nil
+}
+
+type testPhotoStorage struct{}
+
+func (storage testPhotoStorage) CreateSignedUpload(ctx context.Context, command applicationinventory.CreatePhotoUploadCommand) (applicationinventory.SignedPhotoUpload, error) {
+	return applicationinventory.SignedPhotoUpload{
+		ObjectKey: command.ObjectKey,
+		SignedURL: "https://example.supabase.co/storage/v1/object/upload/sign/inventory-photos/" + command.ObjectKey + "?token=upload-token",
+		Token:     "upload-token",
+		ExpiresAt: time.Date(2026, 5, 1, 14, 0, 0, 0, time.UTC),
+		PublicURL: storage.PublicURL(command.ObjectKey),
+	}, nil
+}
+
+func (storage testPhotoStorage) GetObjectInfo(ctx context.Context, query applicationinventory.PhotoObjectInfoQuery) (applicationinventory.PhotoObjectInfo, error) {
+	return applicationinventory.PhotoObjectInfo{
+		ObjectKey:   query.ObjectKey,
+		ContentType: inventorydomain.PhotoContentTypeWebP,
+		SizeBytes:   1024,
+	}, nil
+}
+
+func (storage testPhotoStorage) PublicURL(objectKey string) string {
+	return "https://example.supabase.co/storage/v1/object/public/inventory-photos/" + objectKey
 }
 
 type testMerchBoothRepository struct{}
@@ -692,6 +771,7 @@ func testDependencies() Dependencies {
 		VerifiedUserInspector:      testVerifiedUserInspector{},
 		AccountRepository:          testAccountRepository{},
 		InventoryRepository:        testInventoryRepository{},
+		PhotoStorage:               testPhotoStorage{},
 		MerchBoothRepository:       testMerchBoothRepository{},
 		FinancialReportsRepository: testFinancialReportsRepository{},
 		CalendarRepository:         testCalendarRepository{},

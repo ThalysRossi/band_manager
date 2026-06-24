@@ -369,11 +369,13 @@ func seedProduct(t *testing.T, ctx context.Context, pool *pgxpool.Pool, bandID s
 	variantID := uuid.NewString()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO merch_products (
-			id, band_id, name, normalized_name, category, photo_object_key,
-			photo_content_type, photo_size_bytes, created_at, updated_at
+			id, band_id, name, normalized_name, category,
+			photo_full_object_key, photo_full_content_type, photo_full_size_bytes, photo_full_width, photo_full_height,
+			photo_display_object_key, photo_display_content_type, photo_display_size_bytes, photo_display_width, photo_display_height,
+			created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-	`, productID, bandID, name, strings.ToLower(name), category, "bands/test/products/photo.jpg", "image/jpeg", 1024, now)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+	`, productID, bandID, name, strings.ToLower(name), category, "bands/test/products/photo/full.webp", "image/webp", 1024, 1200, 900, "bands/test/products/photo/display.webp", "image/webp", 512, 1280, 960, now)
 	if err != nil {
 		t.Fatalf("seed product: %v", err)
 	}

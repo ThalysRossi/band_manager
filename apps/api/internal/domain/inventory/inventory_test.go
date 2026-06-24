@@ -59,11 +59,78 @@ func TestPhotoMetadataIsRequired(t *testing.T) {
 	t.Parallel()
 
 	err := ValidatePhotoMetadata(PhotoMetadata{
-		ObjectKey:   "",
-		ContentType: "image/jpeg",
-		SizeBytes:   1024,
+		Full: PhotoVariantMetadata{
+			ObjectKey:   "",
+			ContentType: PhotoContentTypeWebP,
+			SizeBytes:   1024,
+			Width:       1200,
+			Height:      900,
+		},
+		Display: PhotoVariantMetadata{
+			ObjectKey:   "bands/band_1/inventory/photos/photo/display.webp",
+			ContentType: PhotoContentTypeWebP,
+			SizeBytes:   512,
+			Width:       1280,
+			Height:      960,
+		},
 	})
 	if err == nil {
 		t.Fatal("expected photo validation error")
+	}
+}
+
+func TestPhotoMetadataRequiresWebPVariants(t *testing.T) {
+	t.Parallel()
+
+	photo := validPhotoMetadata()
+	photo.Full.ContentType = "image/jpeg"
+
+	err := ValidatePhotoMetadata(photo)
+	if err == nil {
+		t.Fatal("expected WebP content type validation error")
+	}
+}
+
+func TestPhotoMetadataRejectsOversizedFullVariant(t *testing.T) {
+	t.Parallel()
+
+	photo := validPhotoMetadata()
+	photo.Full.Width = 3841
+
+	err := ValidatePhotoMetadata(photo)
+	if err == nil {
+		t.Fatal("expected full variant dimension validation error")
+	}
+}
+
+func TestPhotoMetadataRejectsInvalidDisplayAspectRatio(t *testing.T) {
+	t.Parallel()
+
+	photo := validPhotoMetadata()
+	photo.Display.Width = 1000
+	photo.Display.Height = 1000
+
+	err := ValidatePhotoMetadata(photo)
+	if err == nil {
+		t.Fatal("expected display aspect ratio validation error")
+	}
+}
+
+func validPhotoMetadata() PhotoMetadata {
+	return PhotoMetadata{
+		Full: PhotoVariantMetadata{
+			ObjectKey:   "bands/band_1/inventory/photos/photo/full.webp",
+			ContentType: PhotoContentTypeWebP,
+			SizeBytes:   1024,
+			Width:       1200,
+			Height:      900,
+		},
+		Display: PhotoVariantMetadata{
+			ObjectKey:   "bands/band_1/inventory/photos/photo/display.webp",
+			ContentType: PhotoContentTypeWebP,
+			SizeBytes:   512,
+			Width:       1280,
+			Height:      960,
+		},
 	}
 }

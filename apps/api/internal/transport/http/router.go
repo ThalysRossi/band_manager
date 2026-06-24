@@ -26,6 +26,7 @@ type Dependencies struct {
 	VerifiedUserInspector      session.VerifiedUserInspector
 	AccountRepository          accounts.BandAccountRepository
 	InventoryRepository        applicationinventory.Repository
+	PhotoStorage               applicationinventory.PhotoStorage
 	MerchBoothRepository       applicationmerchbooth.Repository
 	FinancialReportsRepository applicationfinancialreports.Repository
 	CalendarRepository         applicationcalendar.Repository
@@ -43,8 +44,8 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 
 	authHandler := authhandler.NewHandler(dependencies.AccountRepository, appLogger)
 	accountHandler := accounthandler.NewHandler(dependencies.AccountRepository, appLogger)
-	inventoryHandler := inventoryhandler.NewHandler(dependencies.InventoryRepository, appLogger)
-	merchBoothHandler := merchboothhandler.NewHandler(dependencies.MerchBoothRepository, dependencies.PaymentProvider, appConfig.MercadoPagoWebhookSecret, appConfig.MercadoPagoPointTerminalID, appLogger)
+	inventoryHandler := inventoryhandler.NewHandler(dependencies.InventoryRepository, dependencies.PhotoStorage, appLogger)
+	merchBoothHandler := merchboothhandler.NewHandler(dependencies.MerchBoothRepository, dependencies.PaymentProvider, dependencies.PhotoStorage, appConfig.MercadoPagoWebhookSecret, appConfig.MercadoPagoPointTerminalID, appLogger)
 	financialReportsHandler := financialreportshandler.NewHandler(dependencies.FinancialReportsRepository, appLogger)
 	calendarHandler := calendarhandler.NewHandler(dependencies.CalendarRepository, appLogger)
 
@@ -68,6 +69,7 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 			protected.Post("/account/invites/{inviteID}/revoke", accountHandler.RevokeInvite)
 
 			protected.Get("/inventory", inventoryHandler.ListInventory)
+			protected.Post("/inventory/photos/upload-requests", inventoryHandler.CreatePhotoUpload)
 			protected.Post("/inventory/products", inventoryHandler.CreateProduct)
 			protected.Put("/inventory/products/{productID}", inventoryHandler.UpdateProduct)
 			protected.Delete("/inventory/products/{productID}", inventoryHandler.SoftDeleteProduct)

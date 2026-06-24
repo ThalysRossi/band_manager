@@ -307,6 +307,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /inventory/photos/upload-requests:
+    post:
+      operationId: createInventoryPhotoUploadRequest
+      summary: Create signed upload targets for processed inventory photo variants
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryPhotoUploadRequest'
+      responses:
+        '201':
+          description: Signed upload targets created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryPhotoUploadResponse'
+        '400':
+          description: Invalid photo upload request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot upload inventory photos in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /inventory/products:
     post:
       operationId: createInventoryProduct
@@ -1302,7 +1339,7 @@ components:
         category:
           $ref: '#/components/schemas/InventoryCategory'
         photo:
-          $ref: '#/components/schemas/InventoryPhoto'
+          $ref: '#/components/schemas/InventoryPhotoManifest'
     InventoryVariantRequest:
       type: object
       required:
@@ -1396,22 +1433,132 @@ components:
         updatedAt:
           type: string
           format: date-time
-    InventoryPhoto:
+    InventoryPhotoUploadRequest:
+      type: object
+      required:
+        - full
+        - display
+      properties:
+        full:
+          $ref: '#/components/schemas/InventoryPhotoUploadVariant'
+        display:
+          $ref: '#/components/schemas/InventoryPhotoUploadVariant'
+    InventoryPhotoUploadVariant:
+      type: object
+      required:
+        - contentType
+        - sizeBytes
+        - width
+        - height
+      properties:
+        contentType:
+          type: string
+          const: image/webp
+        sizeBytes:
+          type: integer
+          minimum: 1
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+    InventoryPhotoUploadResponse:
+      type: object
+      required:
+        - photo
+        - uploads
+      properties:
+        photo:
+          $ref: '#/components/schemas/InventoryPhoto'
+        uploads:
+          type: object
+          required:
+            - full
+            - display
+          properties:
+            full:
+              $ref: '#/components/schemas/InventoryPhotoUploadTarget'
+            display:
+              $ref: '#/components/schemas/InventoryPhotoUploadTarget'
+    InventoryPhotoUploadTarget:
+      type: object
+      required:
+        - objectKey
+        - signedUrl
+        - token
+        - expiresAt
+        - publicUrl
+      properties:
+        objectKey:
+          type: string
+          minLength: 1
+        signedUrl:
+          type: string
+          format: uri
+        token:
+          type: string
+          minLength: 1
+        expiresAt:
+          type: string
+          format: date-time
+        publicUrl:
+          type: string
+          format: uri
+    InventoryPhotoManifest:
+      type: object
+      required:
+        - full
+        - display
+      properties:
+        full:
+          $ref: '#/components/schemas/InventoryPhotoManifestVariant'
+        display:
+          $ref: '#/components/schemas/InventoryPhotoManifestVariant'
+    InventoryPhotoManifestVariant:
       type: object
       required:
         - objectKey
         - contentType
         - sizeBytes
+        - width
+        - height
       properties:
         objectKey:
           type: string
           minLength: 1
         contentType:
           type: string
-          minLength: 1
+          const: image/webp
         sizeBytes:
           type: integer
           minimum: 1
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+    InventoryPhoto:
+      type: object
+      required:
+        - full
+        - display
+      properties:
+        full:
+          $ref: '#/components/schemas/InventoryPhotoVariant'
+        display:
+          $ref: '#/components/schemas/InventoryPhotoVariant'
+    InventoryPhotoVariant:
+      allOf:
+        - $ref: '#/components/schemas/InventoryPhotoManifestVariant'
+        - type: object
+          required:
+            - publicUrl
+          properties:
+            publicUrl:
+              type: string
+              format: uri
     Money:
       type: object
       required:

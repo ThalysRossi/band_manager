@@ -83,14 +83,25 @@ export type TranslationKey =
   | 'inventory.deleteConfirm'
   | 'inventory.deleteProduct'
   | 'inventory.deleteSuccess'
+  | 'inventory.deleteVariant'
+  | 'inventory.deleteVariantConfirm'
+  | 'inventory.deleteVariantSuccess'
   | 'inventory.editCategoryLabel'
   | 'inventory.editNameLabel'
   | 'inventory.editProduct'
   | 'inventory.editTitle'
+  | 'inventory.editVariant'
+  | 'inventory.editVariantColourLabel'
+  | 'inventory.editVariantCostLabel'
+  | 'inventory.editVariantPriceLabel'
+  | 'inventory.editVariantQuantityLabel'
+  | 'inventory.editVariantSizeLabel'
+  | 'inventory.editVariantTitle'
   | 'inventory.empty'
   | 'inventory.error'
   | 'inventory.formInvalid'
   | 'inventory.inStock'
+  | 'inventory.inStockCountSuffix'
   | 'inventory.loading'
   | 'inventory.nameLabel'
   | 'inventory.photoInvalid'
@@ -120,6 +131,10 @@ export type TranslationKey =
   | 'inventory.stockHeader'
   | 'inventory.updateSubmit'
   | 'inventory.updateSuccess'
+  | 'inventory.updateVariantSubmit'
+  | 'inventory.updateVariantSuccess'
+  | 'inventory.variantSingular'
+  | 'inventory.variantsPlural'
   | 'inventory.variantsHeader'
   | 'inventory.variantsTitle'
   | 'nav.inventory'
@@ -216,14 +231,25 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.deleteConfirm': 'Delete this product from inventory?',
     'inventory.deleteProduct': 'Delete product',
     'inventory.deleteSuccess': 'Product deleted.',
+    'inventory.deleteVariant': 'Delete variant',
+    'inventory.deleteVariantConfirm': 'Delete this variant from inventory?',
+    'inventory.deleteVariantSuccess': 'Variant deleted.',
     'inventory.editCategoryLabel': 'Edit category',
     'inventory.editNameLabel': 'Edit product name',
     'inventory.editProduct': 'Edit product',
     'inventory.editTitle': 'Edit product',
+    'inventory.editVariant': 'Edit variant',
+    'inventory.editVariantColourLabel': 'Edit variant colour',
+    'inventory.editVariantCostLabel': 'Edit variant cost (BRL)',
+    'inventory.editVariantPriceLabel': 'Edit variant price (BRL)',
+    'inventory.editVariantQuantityLabel': 'Edit variant quantity',
+    'inventory.editVariantSizeLabel': 'Edit variant size',
+    'inventory.editVariantTitle': 'Edit variant',
     'inventory.empty': 'No inventory products yet.',
     'inventory.error': 'Inventory request failed.',
     'inventory.formInvalid': 'Check the inventory form and try again.',
     'inventory.inStock': 'In stock',
+    'inventory.inStockCountSuffix': 'in stock',
     'inventory.loading': 'Loading inventory...',
     'inventory.nameLabel': 'Product name',
     'inventory.photoInvalid': 'Photo could not be processed.',
@@ -254,6 +280,10 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.stockHeader': 'Stock',
     'inventory.updateSubmit': 'Save product',
     'inventory.updateSuccess': 'Product updated.',
+    'inventory.updateVariantSubmit': 'Save variant',
+    'inventory.updateVariantSuccess': 'Variant updated.',
+    'inventory.variantSingular': 'variant',
+    'inventory.variantsPlural': 'variants',
     'inventory.variantsHeader': 'Variants',
     'inventory.variantsTitle': 'Variants',
     'nav.inventory': 'Inventory',
@@ -347,14 +377,25 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.deleteConfirm': 'Remover este produto do estoque?',
     'inventory.deleteProduct': 'Remover produto',
     'inventory.deleteSuccess': 'Produto removido.',
+    'inventory.deleteVariant': 'Remover variante',
+    'inventory.deleteVariantConfirm': 'Remover esta variante do estoque?',
+    'inventory.deleteVariantSuccess': 'Variante removida.',
     'inventory.editCategoryLabel': 'Editar categoria',
     'inventory.editNameLabel': 'Editar nome do produto',
     'inventory.editProduct': 'Editar produto',
     'inventory.editTitle': 'Editar produto',
+    'inventory.editVariant': 'Editar variante',
+    'inventory.editVariantColourLabel': 'Editar cor da variante',
+    'inventory.editVariantCostLabel': 'Editar custo da variante (BRL)',
+    'inventory.editVariantPriceLabel': 'Editar preco da variante (BRL)',
+    'inventory.editVariantQuantityLabel': 'Editar quantidade da variante',
+    'inventory.editVariantSizeLabel': 'Editar tamanho da variante',
+    'inventory.editVariantTitle': 'Editar variante',
     'inventory.empty': 'Nenhum produto no estoque ainda.',
     'inventory.error': 'A requisicao do estoque falhou.',
     'inventory.formInvalid': 'Confira o formulario do estoque e tente novamente.',
     'inventory.inStock': 'Em estoque',
+    'inventory.inStockCountSuffix': 'em estoque',
     'inventory.loading': 'Carregando estoque...',
     'inventory.nameLabel': 'Nome do produto',
     'inventory.photoInvalid': 'Nao foi possivel processar a foto.',
@@ -385,6 +426,10 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.stockHeader': 'Estoque',
     'inventory.updateSubmit': 'Salvar produto',
     'inventory.updateSuccess': 'Produto atualizado.',
+    'inventory.updateVariantSubmit': 'Salvar variante',
+    'inventory.updateVariantSuccess': 'Variante atualizada.',
+    'inventory.variantSingular': 'variante',
+    'inventory.variantsPlural': 'variantes',
     'inventory.variantsHeader': 'Variantes',
     'inventory.variantsTitle': 'Variantes',
     'nav.inventory': 'Estoque',

@@ -7,7 +7,9 @@ import type {
   InventoryPhoto,
   InventoryPhotoUploadResponse,
   InventoryProduct,
-  UpdateInventoryProductRequest
+  InventoryVariant,
+  UpdateInventoryProductRequest,
+  UpdateInventoryVariantRequest
 } from '../features/inventory/api'
 
 type MockCurrentAccountRole = Extract<Role, 'owner' | 'viewer'>
@@ -125,6 +127,61 @@ export const apiHandlers = [
     const productID = routeParam(params.productID)
     mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.filter((product) => {
       return product.id !== productID
+    })
+
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.put(`${apiBaseURL}/inventory/variants/:variantID`, async ({ params, request }) => {
+    const variantID = routeParam(params.variantID)
+    const body = (await request.json()) as UpdateInventoryVariantRequest
+    const product = mockAPIState.inventoryProducts.find((inventoryProduct) => {
+      return inventoryProduct.variants.some((variant) => variant.id === variantID)
+    })
+    if (product === undefined) {
+      return HttpResponse.json(
+        { code: 'inventory_not_found', message: 'Inventory variant not found' },
+        { status: 404 }
+      )
+    }
+
+    const variant = product.variants.find((inventoryVariant) => inventoryVariant.id === variantID)
+    if (variant === undefined) {
+      return HttpResponse.json(
+        { code: 'inventory_not_found', message: 'Inventory variant not found' },
+        { status: 404 }
+      )
+    }
+
+    const updatedVariant: InventoryVariant = {
+      ...variant,
+      size: body.size,
+      colour: body.colour,
+      price: body.price,
+      cost: body.cost,
+      quantity: body.quantity,
+      soldOut: body.quantity === 0,
+      updatedAt: '2026-05-01T13:00:00Z'
+    }
+    const updatedProduct: InventoryProduct = {
+      ...product,
+      variants: product.variants.map((inventoryVariant) => {
+        return inventoryVariant.id === variantID ? updatedVariant : inventoryVariant
+      }),
+      updatedAt: '2026-05-01T13:00:00Z'
+    }
+    mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.map((inventoryProduct) => {
+      return inventoryProduct.id === product.id ? updatedProduct : inventoryProduct
+    })
+
+    return HttpResponse.json(updatedVariant, { status: 200 })
+  }),
+  http.delete(`${apiBaseURL}/inventory/variants/:variantID`, ({ params }) => {
+    const variantID = routeParam(params.variantID)
+    mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.map((product) => {
+      return {
+        ...product,
+        variants: product.variants.filter((variant) => variant.id !== variantID)
+      }
     })
 
     return new HttpResponse(null, { status: 204 })

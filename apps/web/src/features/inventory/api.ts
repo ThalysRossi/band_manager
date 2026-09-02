@@ -93,6 +93,8 @@ export type UpdateInventoryProductRequest = {
   photo: InventoryPhotoManifest
 }
 
+export type UpdateInventoryVariantRequest = InventoryVariantRequest
+
 export type PhotoUploadVariantRequest = {
   contentType: 'image/webp'
   sizeBytes: number
@@ -216,6 +218,30 @@ export async function deleteInventoryProduct(
   await apiRequest<void>({
     accessToken,
     path: `/inventory/products/${productID}`,
+    method: 'DELETE',
+    body: null,
+    idempotent: true
+  })
+}
+
+export async function updateInventoryVariant(
+  accessToken: string,
+  variantID: string,
+  request: UpdateInventoryVariantRequest
+): Promise<InventoryVariant> {
+  return apiRequest<InventoryVariant>({
+    accessToken,
+    path: `/inventory/variants/${variantID}`,
+    method: 'PUT',
+    body: request,
+    idempotent: true
+  })
+}
+
+export async function deleteInventoryVariant(accessToken: string, variantID: string): Promise<void> {
+  await apiRequest<void>({
+    accessToken,
+    path: `/inventory/variants/${variantID}`,
     method: 'DELETE',
     body: null,
     idempotent: true

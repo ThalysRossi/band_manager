@@ -220,6 +220,8 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Create product' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit product/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Delete product/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit variant/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete variant/i })).not.toBeInTheDocument()
   })
 
   it('creates an inventory product with photo upload', async () => {
@@ -322,6 +324,37 @@ describe('App', () => {
     expect(window.confirm).toHaveBeenCalledWith('Delete this product from inventory?')
     expect(await screen.findByText('Product deleted.')).toBeInTheDocument()
     expect(await screen.findByText('No inventory products yet.')).toBeInTheDocument()
+  })
+
+  it('updates an inventory variant', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit variant Logo Shirt M / Black' }))
+    fireEvent.change(screen.getByLabelText('Edit variant colour'), {
+      target: { value: 'Red' }
+    })
+    fireEvent.change(screen.getByLabelText('Edit variant quantity'), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save variant' }))
+
+    expect(await screen.findByText('Variant updated.')).toBeInTheDocument()
+    expect(await screen.findByText('M / Red')).toBeInTheDocument()
+    expect(await screen.findByText('4 in stock')).toBeInTheDocument()
+  })
+
+  it('deletes an inventory variant after confirmation', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete variant Logo Shirt M / Black' }))
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete this variant from inventory?')
+    expect(await screen.findByText('Variant deleted.')).toBeInTheDocument()
+    expect(await screen.findByText('0 variants')).toBeInTheDocument()
   })
 
   it('logs out from the header account dropdown', async () => {

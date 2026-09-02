@@ -23,8 +23,10 @@ import {
   createInventoryPhotoUploadRequest,
   createInventoryProduct,
   deleteInventoryProduct,
+  deleteInventoryVariant,
   listInventory,
   updateInventoryProduct,
+  updateInventoryVariant,
   uploadInventoryPhotoVariant
 } from './api'
 import type {
@@ -35,9 +37,11 @@ import type {
   InventoryPhotoUploadResponse,
   InventoryProduct,
   InventorySize,
+  InventoryVariant,
   InventoryVariantRequest,
   PhotoUploadVariantRequest,
-  UpdateInventoryProductRequest
+  UpdateInventoryProductRequest,
+  UpdateInventoryVariantRequest
 } from './api'
 import { processInventoryPhoto } from './photoProcessing'
 import type { ProcessedInventoryPhoto } from './photoProcessing'
@@ -59,6 +63,8 @@ type InventoryProductEditFormValues = {
   name: string
   category: InventoryCategory
 }
+
+type InventoryVariantEditFormValues = InventoryVariantFormValues
 
 type InventoryVariantFormValues = {
   size: InventorySize
@@ -150,9 +156,27 @@ const inventoryProductEditSchema = z.object({
   ])
 })
 
+const inventoryVariantEditSchema = z.object({
+  size: z.enum(['not_applicable', 'one_size', 'pp', 'p', 'm', 'g', 'gg', 'xgg']),
+  colour: z.string(),
+  priceAmount: z.number().finite().min(0),
+  costAmount: z.number().finite().min(0),
+  quantity: z.number().int().min(0)
+})
+
 type UpdateProductMutationInput = {
   productID: string
   request: UpdateInventoryProductRequest
+}
+
+type UpdateVariantMutationInput = {
+  variantID: string
+  request: UpdateInventoryVariantRequest
+}
+
+type InventoryVariantSelection = {
+  product: InventoryProduct
+  variant: InventoryVariant
 }
 
 export function InventoryPage(props: InventoryPageProps) {
@@ -161,6 +185,7 @@ export function InventoryPage(props: InventoryPageProps) {
   const [photoState, setPhotoState] = useState<PhotoFormState>({ status: 'empty' })
   const [previewURL, setPreviewURL] = useState<string>('')
   const [editingProductID, setEditingProductID] = useState<string>('')
+  const [editingVariantID, setEditingVariantID] = useState<string>('')
 
   const accountQuery = useQuery({
     queryKey: ['account', 'current', props.accessToken],
@@ -221,6 +246,31 @@ export function InventoryPage(props: InventoryPageProps) {
     }
   })
 
+  const updateVariantMutation = useMutation({
+    mutationFn: (input: UpdateVariantMutationInput) =>
+      updateInventoryVariant(props.accessToken, input.variantID, input.request),
+    onSuccess: () => {
+      setEditingVariantID('')
+      setFormStatus(props.translate('inventory.updateVariantSuccess'))
+      void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
+    },
+    onError: (error) => {
+      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+    }
+  })
+
+  const deleteVariantMutation = useMutation({
+    mutationFn: (variantID: string) => deleteInventoryVariant(props.accessToken, variantID),
+    onSuccess: () => {
+      setEditingVariantID('')
+      setFormStatus(props.translate('inventory.deleteVariantSuccess'))
+      void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
+    },
+    onError: (error) => {
+      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+    }
+  })
+
   useEffect(() => {
     return () => {
       if (previewURL !== '') {
@@ -233,8 +283,10 @@ export function InventoryPage(props: InventoryPageProps) {
   const products = inventoryQuery.data
   const canMutate = account?.activeBand.canWrite === true
   const editingProduct = findProductByID(products, editingProductID)
+  const editingVariant = findInventoryVariant(products, editingVariantID)
   const createPending = createMutation.isPending || photoState.status === 'processing'
   const productMutationPending = updateProductMutation.isPending || deleteProductMutation.isPending
+  const variantMutationPending = updateVariantMutation.isPending || deleteVariantMutation.isPending
 
   async function handlePhotoChange(fileList: FileList | null): Promise<void> {
     const file = fileList?.[0]
@@ -327,6 +379,32 @@ export function InventoryPage(props: InventoryPageProps) {
     }
 
     deleteProductMutation.mutate(product.id)
+  }
+
+  function handleUpdateVariant(
+    selection: InventoryVariantSelection,
+    values: InventoryVariantEditFormValues
+  ): void {
+    setFormStatus('')
+    const parsedValues = inventoryVariantEditSchema.safeParse(values)
+    if (!parsedValues.success) {
+      setFormStatus(props.translate('inventory.formInvalid'))
+      return
+    }
+
+    updateVariantMutation.mutate({
+      variantID: selection.variant.id,
+      request: toVariantRequest(parsedValues.data)
+    })
+  }
+
+  function handleDeleteVariant(selection: InventoryVariantSelection): void {
+    setFormStatus('')
+    if (!window.confirm(props.translate('inventory.deleteVariantConfirm'))) {
+      return
+    }
+
+    deleteVariantMutation.mutate(selection.variant.id)
   }
 
   if (accountQuery.isLoading || inventoryQuery.isLoading) {
@@ -558,16 +636,34 @@ export function InventoryPage(props: InventoryPageProps) {
         />
       )}
 
+      {editingVariant === undefined ? null : (
+        <VariantEditForm
+          selection={editingVariant}
+          translate={props.translate}
+          disabled={variantMutationPending}
+          onCancel={() => setEditingVariantID('')}
+          onSubmit={handleUpdateVariant}
+        />
+      )}
+
       <InventoryList
         products={products}
         translate={props.translate}
         canMutate={canMutate}
-        mutationPending={productMutationPending}
+        productMutationPending={productMutationPending}
+        variantMutationPending={variantMutationPending}
         onEdit={(product) => {
           setFormStatus('')
+          setEditingVariantID('')
           setEditingProductID(product.id)
         }}
         onDelete={handleDeleteProduct}
+        onEditVariant={(selection) => {
+          setFormStatus('')
+          setEditingProductID('')
+          setEditingVariantID(selection.variant.id)
+        }}
+        onDeleteVariant={handleDeleteVariant}
       />
     </section>
   )
@@ -646,6 +742,118 @@ function ProductEditForm(props: {
   )
 }
 
+function VariantEditForm(props: {
+  selection: InventoryVariantSelection
+  translate: Translate
+  disabled: boolean
+  onCancel: () => void
+  onSubmit: (
+    selection: InventoryVariantSelection,
+    values: InventoryVariantEditFormValues
+  ) => void
+}) {
+  const form = useForm<InventoryVariantEditFormValues>({
+    defaultValues: toVariantFormValues(props.selection.variant)
+  })
+
+  return (
+    <Card aria-labelledby="inventory-edit-variant-title">
+      <CardHeader>
+        <h3 id="inventory-edit-variant-title" className="m-0 text-base leading-tight">
+          {props.translate('inventory.editVariantTitle')}
+        </h3>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-ui-16"
+          onSubmit={(event) => {
+            void form.handleSubmit((values) => props.onSubmit(props.selection, values))(event)
+          }}
+        >
+          <div className="grid gap-ui-12 min-[900px]:grid-cols-5">
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-edit-variant-size-${props.selection.variant.id}`}>
+                {props.translate('inventory.editVariantSizeLabel')}
+              </Label>
+              <select
+                id={`inventory-edit-variant-size-${props.selection.variant.id}`}
+                className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
+                {...form.register('size', { required: true })}
+              >
+                {inventorySizes.map((size) => (
+                  <option key={size} value={size}>
+                    {props.translate(sizeLabelKey(size))}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-edit-variant-colour-${props.selection.variant.id}`}>
+                {props.translate('inventory.editVariantColourLabel')}
+              </Label>
+              <Input
+                id={`inventory-edit-variant-colour-${props.selection.variant.id}`}
+                {...form.register('colour')}
+              />
+            </div>
+
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-edit-variant-price-${props.selection.variant.id}`}>
+                {props.translate('inventory.editVariantPriceLabel')}
+              </Label>
+              <Input
+                id={`inventory-edit-variant-price-${props.selection.variant.id}`}
+                type="number"
+                step="0.01"
+                min="0"
+                {...form.register('priceAmount', { valueAsNumber: true })}
+              />
+            </div>
+
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-edit-variant-cost-${props.selection.variant.id}`}>
+                {props.translate('inventory.editVariantCostLabel')}
+              </Label>
+              <Input
+                id={`inventory-edit-variant-cost-${props.selection.variant.id}`}
+                type="number"
+                step="0.01"
+                min="0"
+                {...form.register('costAmount', { valueAsNumber: true })}
+              />
+            </div>
+
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-edit-variant-quantity-${props.selection.variant.id}`}>
+                {props.translate('inventory.editVariantQuantityLabel')}
+              </Label>
+              <Input
+                id={`inventory-edit-variant-quantity-${props.selection.variant.id}`}
+                type="number"
+                step="1"
+                min="0"
+                {...form.register('quantity', { valueAsNumber: true })}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-ui-16">
+            <Button type="submit" disabled={props.disabled}>
+              <Save aria-hidden="true" />
+              {props.translate('inventory.updateVariantSubmit')}
+            </Button>
+            <Button type="button" variant="outline" disabled={props.disabled} onClick={props.onCancel}>
+              <X aria-hidden="true" />
+              {props.translate('inventory.cancelEdit')}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 function PhotoStatus(props: { photoState: PhotoFormState; translate: Translate }) {
   if (props.photoState.status === 'empty') {
     return null
@@ -679,9 +887,12 @@ function InventoryList(props: {
   products: InventoryProduct[]
   translate: Translate
   canMutate: boolean
-  mutationPending: boolean
+  productMutationPending: boolean
+  variantMutationPending: boolean
   onEdit: (product: InventoryProduct) => void
   onDelete: (product: InventoryProduct) => void
+  onEditVariant: (selection: InventoryVariantSelection) => void
+  onDeleteVariant: (selection: InventoryVariantSelection) => void
 }) {
   if (props.products.length === 0) {
     return <StatusPanel message={props.translate('inventory.empty')} />
@@ -713,7 +924,47 @@ function InventoryList(props: {
               </div>
             </TableCell>
             <TableCell>{props.translate(categoryLabelKey(product.category))}</TableCell>
-            <TableCell>{product.variants.length}</TableCell>
+            <TableCell>
+              <div className="grid gap-ui-8">
+                <span>{variantCountLabel(product.variants.length, props.translate)}</span>
+                {product.variants.map((variant) => {
+                  const selection: InventoryVariantSelection = { product, variant }
+                  const label = variantLabel(variant, props.translate)
+                  return (
+                    <div key={variant.id} className="flex flex-wrap items-center gap-ui-8 text-sm">
+                      <span>{label}</span>
+                      <span className="text-white-300">
+                        {variantStockLabel(variant, props.translate)}
+                      </span>
+                      {props.canMutate ? (
+                        <div className="flex items-center gap-ui-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            aria-label={`${props.translate('inventory.editVariant')} ${product.name} ${label}`}
+                            disabled={props.variantMutationPending}
+                            onClick={() => props.onEditVariant(selection)}
+                          >
+                            <Pencil aria-hidden="true" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            aria-label={`${props.translate('inventory.deleteVariant')} ${product.name} ${label}`}
+                            disabled={props.variantMutationPending}
+                            onClick={() => props.onDeleteVariant(selection)}
+                          >
+                            <Trash2 aria-hidden="true" />
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </TableCell>
             <TableCell>{totalStock(product)}</TableCell>
             <TableCell>
               <Badge variant={isSoldOut(product) ? 'secondary' : 'default'}>
@@ -728,7 +979,7 @@ function InventoryList(props: {
                     variant="outline"
                     size="icon"
                     aria-label={`${props.translate('inventory.editProduct')} ${product.name}`}
-                    disabled={props.mutationPending}
+                    disabled={props.productMutationPending}
                     onClick={() => props.onEdit(product)}
                   >
                     <Pencil aria-hidden="true" />
@@ -738,7 +989,7 @@ function InventoryList(props: {
                     variant="outline"
                     size="icon"
                     aria-label={`${props.translate('inventory.deleteProduct')} ${product.name}`}
-                    disabled={props.mutationPending}
+                    disabled={props.productMutationPending}
                     onClick={() => props.onDelete(product)}
                   >
                     <Trash2 aria-hidden="true" />
@@ -827,6 +1078,16 @@ function toVariantRequest(values: InventoryVariantFormValues): InventoryVariantR
   }
 }
 
+function toVariantFormValues(variant: InventoryVariant): InventoryVariantEditFormValues {
+  return {
+    size: variant.size,
+    colour: variant.colour,
+    priceAmount: variant.price.amount / 100,
+    costAmount: variant.cost.amount / 100,
+    quantity: variant.quantity
+  }
+}
+
 function amountToCents(value: number): number {
   return Math.round(value * 100)
 }
@@ -845,6 +1106,40 @@ function findProductByID(products: InventoryProduct[] | undefined, productID: st
   }
 
   return products.find((product) => product.id === productID)
+}
+
+function findInventoryVariant(
+  products: InventoryProduct[] | undefined,
+  variantID: string
+): InventoryVariantSelection | undefined {
+  if (products === undefined || variantID === '') {
+    return undefined
+  }
+
+  for (const product of products) {
+    const variant = product.variants.find((inventoryVariant) => inventoryVariant.id === variantID)
+    if (variant !== undefined) {
+      return { product, variant }
+    }
+  }
+
+  return undefined
+}
+
+function variantLabel(variant: InventoryVariant, translate: Translate): string {
+  return `${translate(sizeLabelKey(variant.size))} / ${variant.colour}`
+}
+
+function variantCountLabel(count: number, translate: Translate): string {
+  return count === 1
+    ? `1 ${translate('inventory.variantSingular')}`
+    : `${count} ${translate('inventory.variantsPlural')}`
+}
+
+function variantStockLabel(variant: InventoryVariant, translate: Translate): string {
+  return variant.quantity === 0
+    ? translate('inventory.soldOut')
+    : `${variant.quantity} ${translate('inventory.inStockCountSuffix')}`
 }
 
 function categoryLabelKey(category: InventoryCategory): TranslationKey {

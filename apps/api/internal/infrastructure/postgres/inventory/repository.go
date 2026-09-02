@@ -108,6 +108,72 @@ func (repository Repository) CreateProduct(ctx context.Context, command applicat
 	}, nil
 }
 
+func (repository Repository) CreateVariant(ctx context.Context, command applicationinventory.CreateVariantCommand) (applicationinventory.Variant, error) {
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return applicationinventory.Variant{}, fmt.Errorf("begin inventory variant create transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var productID string
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM merch_products
+		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, command.ProductID, command.Account.BandID).Scan(&productID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return applicationinventory.Variant{}, fmt.Errorf("%w: band_id=%q product_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.ProductID)
+	}
+	if err != nil {
+		return applicationinventory.Variant{}, fmt.Errorf("query inventory product before variant create band_id=%q product_id=%q: %w", command.Account.BandID, command.ProductID, err)
+	}
+
+	variantID := uuid.NewString()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO merch_variants (
+			id, band_id, product_id, size, colour, normalized_colour,
+			price_amount, cost_amount, currency, quantity, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+	`, variantID, command.Account.BandID, productID, command.Size, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency, command.Quantity, command.CreatedAt)
+	if err != nil {
+		return applicationinventory.Variant{}, mapPostgresError(err, fmt.Sprintf("insert inventory variant band_id=%q product_id=%q size=%q colour=%q", command.Account.BandID, command.ProductID, command.Size, command.NormalizedColour))
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO inventory_movements (
+			id, band_id, product_id, variant_id, movement_type,
+			quantity_delta, quantity_after, reason, actor_user_id, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, uuid.NewString(), command.Account.BandID, productID, variantID, "initial_stock", command.Quantity, command.Quantity, "inventory.variant_created", command.Account.UserID, command.CreatedAt)
+	if err != nil {
+		return applicationinventory.Variant{}, fmt.Errorf("insert initial inventory movement band_id=%q variant_id=%q: %w", command.Account.BandID, variantID, err)
+	}
+
+	if err := insertAuditLog(ctx, tx, command.Account.UserID, command.Account.BandID, "inventory.variant_created", "merch_variant", variantID, command.RequestID, command.IdempotencyKey, command.CreatedAt); err != nil {
+		return applicationinventory.Variant{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return applicationinventory.Variant{}, fmt.Errorf("commit inventory variant create transaction band_id=%q variant_id=%q: %w", command.Account.BandID, variantID, err)
+	}
+
+	return applicationinventory.Variant{
+		ID:               variantID,
+		ProductID:        productID,
+		Size:             command.Size,
+		Colour:           command.Colour,
+		NormalizedColour: command.NormalizedColour,
+		Price:            command.Price,
+		Cost:             command.Cost,
+		Quantity:         command.Quantity,
+		CreatedAt:        command.CreatedAt,
+		UpdatedAt:        command.CreatedAt,
+	}, nil
+}
+
 func (repository Repository) ListInventory(ctx context.Context, query applicationinventory.ListInventoryQuery) ([]applicationinventory.Product, error) {
 	rows, err := repository.pool.Query(ctx, `
 		SELECT id, band_id, name, normalized_name, category,
@@ -335,6 +401,46 @@ func (repository Repository) SoftDeleteVariant(ctx context.Context, command appl
 		return fmt.Errorf("begin inventory variant delete transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	var productID string
+	err = tx.QueryRow(ctx, `
+		SELECT product_id
+		FROM merch_variants
+		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+	`, command.VariantID, command.Account.BandID).Scan(&productID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: band_id=%q variant_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.VariantID)
+	}
+	if err != nil {
+		return fmt.Errorf("query inventory variant before delete band_id=%q variant_id=%q: %w", command.Account.BandID, command.VariantID, err)
+	}
+
+	var lockedProductID string
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM merch_products
+		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, productID, command.Account.BandID).Scan(&lockedProductID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: band_id=%q product_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, productID)
+	}
+	if err != nil {
+		return fmt.Errorf("lock inventory product before variant delete band_id=%q product_id=%q: %w", command.Account.BandID, productID, err)
+	}
+
+	var activeVariantCount int
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM merch_variants
+		WHERE product_id = $1 AND band_id = $2 AND deleted_at IS NULL
+	`, lockedProductID, command.Account.BandID).Scan(&activeVariantCount)
+	if err != nil {
+		return fmt.Errorf("count active inventory variants band_id=%q product_id=%q: %w", command.Account.BandID, productID, err)
+	}
+	if activeVariantCount <= 1 {
+		return fmt.Errorf("%w: product_id=%q", applicationinventory.ErrLastInventoryVariant, productID)
+	}
 
 	commandTag, err := tx.Exec(ctx, `
 		UPDATE merch_variants

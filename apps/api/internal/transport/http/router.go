@@ -71,6 +71,7 @@ func NewRouter(appConfig config.Config, appLogger *slog.Logger, dependencies Dep
 			protected.Get("/inventory", inventoryHandler.ListInventory)
 			protected.Post("/inventory/photos/upload-requests", inventoryHandler.CreatePhotoUpload)
 			protected.Post("/inventory/products", inventoryHandler.CreateProduct)
+			protected.Post("/inventory/products/{productID}/variants", inventoryHandler.CreateVariant)
 			protected.Put("/inventory/products/{productID}", inventoryHandler.UpdateProduct)
 			protected.Delete("/inventory/products/{productID}", inventoryHandler.SoftDeleteProduct)
 			protected.Put("/inventory/variants/{variantID}", inventoryHandler.UpdateVariant)

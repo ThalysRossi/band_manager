@@ -87,6 +87,8 @@ export type CreateInventoryProductRequest = {
   variants: InventoryVariantRequest[]
 }
 
+export type CreateInventoryVariantRequest = InventoryVariantRequest
+
 export type UpdateInventoryProductRequest = {
   name: string
   category: InventoryCategory
@@ -189,6 +191,20 @@ export async function createInventoryProduct(
       photo: request.photo,
       variants: request.variants
     },
+    idempotent: true
+  })
+}
+
+export async function createInventoryVariant(
+  accessToken: string,
+  productID: string,
+  request: CreateInventoryVariantRequest
+): Promise<InventoryVariant> {
+  return apiRequest<InventoryVariant>({
+    accessToken,
+    path: `/inventory/products/${productID}/variants`,
+    method: 'POST',
+    body: request,
     idempotent: true
   })
 }

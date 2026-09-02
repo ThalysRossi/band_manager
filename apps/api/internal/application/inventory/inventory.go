@@ -13,14 +13,16 @@ import (
 )
 
 var (
-	ErrDuplicateProduct    = errors.New("duplicate inventory product")
-	ErrDuplicateVariant    = errors.New("duplicate inventory variant")
-	ErrInventoryNotFound   = errors.New("inventory record not found")
-	ErrPhotoObjectNotFound = errors.New("inventory photo object not found")
+	ErrDuplicateProduct     = errors.New("duplicate inventory product")
+	ErrDuplicateVariant     = errors.New("duplicate inventory variant")
+	ErrInventoryNotFound    = errors.New("inventory record not found")
+	ErrLastInventoryVariant = errors.New("cannot delete the final inventory variant")
+	ErrPhotoObjectNotFound  = errors.New("inventory photo object not found")
 )
 
 type Repository interface {
 	CreateProduct(ctx context.Context, command CreateProductCommand) (Product, error)
+	CreateVariant(ctx context.Context, command CreateVariantCommand) (Variant, error)
 	ListInventory(ctx context.Context, query ListInventoryQuery) ([]Product, error)
 	UpdateProduct(ctx context.Context, command UpdateProductCommand) (Product, error)
 	UpdateVariant(ctx context.Context, command UpdateVariantCommand) (Variant, error)
@@ -130,6 +132,15 @@ type UpdateProductInput struct {
 	UpdatedAt      time.Time
 }
 
+type CreateVariantInput struct {
+	Account        AccountContext
+	ProductID      string
+	Variant        VariantInput
+	IdempotencyKey string
+	RequestID      string
+	CreatedAt      time.Time
+}
+
 type UpdateVariantInput struct {
 	Account        AccountContext
 	VariantID      string
@@ -157,19 +168,33 @@ type CreateProductCommand struct {
 	NormalizedName string
 	Category       inventorydomain.Category
 	Photo          inventorydomain.PhotoMetadata
-	Variants       []CreateVariantCommand
+	Variants       []CreateProductVariantCommand
 	IdempotencyKey string
 	RequestID      string
 	CreatedAt      time.Time
 }
 
-type CreateVariantCommand struct {
+type CreateProductVariantCommand struct {
 	Size             inventorydomain.Size
 	Colour           string
 	NormalizedColour string
 	Price            inventorydomain.Money
 	Cost             inventorydomain.Money
 	Quantity         int
+}
+
+type CreateVariantCommand struct {
+	Account          AccountContext
+	ProductID        string
+	Size             inventorydomain.Size
+	Colour           string
+	NormalizedColour string
+	Price            inventorydomain.Money
+	Cost             inventorydomain.Money
+	Quantity         int
+	IdempotencyKey   string
+	RequestID        string
+	CreatedAt        time.Time
 }
 
 type UpdateProductCommand struct {
@@ -259,6 +284,20 @@ func CreateProduct(ctx context.Context, repository Repository, photoStorage Phot
 	}
 
 	return product, nil
+}
+
+func CreateVariant(ctx context.Context, repository Repository, input CreateVariantInput) (Variant, error) {
+	command, err := validateCreateVariantInput(input)
+	if err != nil {
+		return Variant{}, err
+	}
+
+	variant, err := repository.CreateVariant(ctx, command)
+	if err != nil {
+		return Variant{}, fmt.Errorf("create inventory variant band_id=%q product_id=%q size=%q colour=%q: %w", command.Account.BandID, command.ProductID, command.Size, command.NormalizedColour, err)
+	}
+
+	return variant, nil
 }
 
 func ListInventory(ctx context.Context, repository Repository, input ListInventoryInput) ([]Product, error) {
@@ -431,6 +470,41 @@ func validateUpdateProductInput(input UpdateProductInput) (UpdateProductCommand,
 		IdempotencyKey: idempotencyKey,
 		RequestID:      requestID,
 		UpdatedAt:      input.UpdatedAt.UTC(),
+	}, nil
+}
+
+func validateCreateVariantInput(input CreateVariantInput) (CreateVariantCommand, error) {
+	if err := validateWriteAccount(input.Account); err != nil {
+		return CreateVariantCommand{}, err
+	}
+
+	productID, err := validateID("product id", input.ProductID)
+	if err != nil {
+		return CreateVariantCommand{}, err
+	}
+
+	variant, err := validateVariantInput(input.Variant)
+	if err != nil {
+		return CreateVariantCommand{}, err
+	}
+
+	idempotencyKey, requestID, err := validateMutationMetadata(input.IdempotencyKey, input.RequestID, input.CreatedAt)
+	if err != nil {
+		return CreateVariantCommand{}, err
+	}
+
+	return CreateVariantCommand{
+		Account:          input.Account,
+		ProductID:        productID,
+		Size:             variant.Size,
+		Colour:           variant.Colour,
+		NormalizedColour: variant.NormalizedColour,
+		Price:            variant.Price,
+		Cost:             variant.Cost,
+		Quantity:         variant.Quantity,
+		IdempotencyKey:   idempotencyKey,
+		RequestID:        requestID,
+		CreatedAt:        input.CreatedAt.UTC(),
 	}, nil
 }
 
@@ -635,8 +709,8 @@ func verifyPhotoObject(ctx context.Context, photoStorage PhotoStorage, label str
 	return nil
 }
 
-func validateCreateVariantInputs(inputs []VariantInput) ([]CreateVariantCommand, error) {
-	variants := make([]CreateVariantCommand, 0, len(inputs))
+func validateCreateVariantInputs(inputs []VariantInput) ([]CreateProductVariantCommand, error) {
+	variants := make([]CreateProductVariantCommand, 0, len(inputs))
 	seenIdentities := make(map[inventorydomain.VariantIdentity]bool, len(inputs))
 	for index, input := range inputs {
 		variant, err := validateVariantInput(input)
@@ -659,33 +733,33 @@ func validateCreateVariantInputs(inputs []VariantInput) ([]CreateVariantCommand,
 	return variants, nil
 }
 
-func validateVariantInput(input VariantInput) (CreateVariantCommand, error) {
+func validateVariantInput(input VariantInput) (CreateProductVariantCommand, error) {
 	size, err := inventorydomain.ParseSize(input.Size)
 	if err != nil {
-		return CreateVariantCommand{}, err
+		return CreateProductVariantCommand{}, err
 	}
 
 	colour := strings.TrimSpace(input.Colour)
 	identity, err := inventorydomain.VariantIdentityFor(size, colour)
 	if err != nil {
-		return CreateVariantCommand{}, err
+		return CreateProductVariantCommand{}, err
 	}
 
 	price := inventorydomain.Money{Amount: input.PriceAmount, Currency: strings.TrimSpace(input.Currency)}
 	if err := inventorydomain.ValidateMoney("price", price); err != nil {
-		return CreateVariantCommand{}, err
+		return CreateProductVariantCommand{}, err
 	}
 
 	cost := inventorydomain.Money{Amount: input.CostAmount, Currency: strings.TrimSpace(input.Currency)}
 	if err := inventorydomain.ValidateMoney("cost", cost); err != nil {
-		return CreateVariantCommand{}, err
+		return CreateProductVariantCommand{}, err
 	}
 
 	if err := inventorydomain.ValidateQuantity(input.Quantity); err != nil {
-		return CreateVariantCommand{}, err
+		return CreateProductVariantCommand{}, err
 	}
 
-	return CreateVariantCommand{
+	return CreateProductVariantCommand{
 		Size:             size,
 		Colour:           colour,
 		NormalizedColour: identity.NormalizedColour,

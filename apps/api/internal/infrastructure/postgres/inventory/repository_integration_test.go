@@ -85,6 +85,44 @@ func TestRepositoryCreateProductRejectsDuplicateVariantIdentity(t *testing.T) {
 	assertTableCount(t, pool, "merch_products", "band_id = $1", []interface{}{account.BandID}, 0)
 }
 
+func TestRepositoryCreateVariantWritesInitialMovementAndAuditLog(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	repository := NewRepository(pool)
+
+	product, err := repository.CreateProduct(ctx, validCreateProductCommand(account, "Camisa Variant Create", 2))
+	if err != nil {
+		t.Fatalf("create inventory product: %v", err)
+	}
+
+	variant, err := repository.CreateVariant(ctx, applicationinventory.CreateVariantCommand{
+		Account:          account,
+		ProductID:        product.ID,
+		Size:             inventorydomain.SizeG,
+		Colour:           "Vermelha",
+		NormalizedColour: "vermelha",
+		Price:            inventorydomain.Money{Amount: 6000, Currency: "BRL"},
+		Cost:             inventorydomain.Money{Amount: 2500, Currency: "BRL"},
+		Quantity:         3,
+		IdempotencyKey:   "idem_create_variant",
+		RequestID:        "request_create_variant",
+		CreatedAt:        testTimestamp().Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("create inventory variant: %v", err)
+	}
+
+	if variant.ProductID != product.ID {
+		t.Fatalf("expected product id %q, got %q", product.ID, variant.ProductID)
+	}
+
+	assertTableCount(t, pool, "merch_variants", "band_id = $1 AND product_id = $2 AND deleted_at IS NULL", []interface{}{account.BandID, product.ID}, 2)
+	assertTableCount(t, pool, "inventory_movements", "band_id = $1 AND variant_id = $2 AND movement_type = $3 AND quantity_delta = $4 AND quantity_after = $5", []interface{}{account.BandID, variant.ID, "initial_stock", 3, 3}, 1)
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_id = $3", []interface{}{account.BandID, "inventory.variant_created", variant.ID}, 1)
+}
+
 func TestRepositoryCreateProductRejectsDatabaseConstraints(t *testing.T) {
 	t.Parallel()
 
@@ -240,7 +278,7 @@ func TestRepositorySoftDeleteVariantHidesVariant(t *testing.T) {
 	repository := NewRepository(pool)
 
 	command := validCreateProductCommand(account, "Camisa Variant Deleted", 2)
-	command.Variants = append(command.Variants, applicationinventory.CreateVariantCommand{
+	command.Variants = append(command.Variants, applicationinventory.CreateProductVariantCommand{
 		Size:             inventorydomain.SizeG,
 		Colour:           "Preta",
 		NormalizedColour: "preta",
@@ -283,6 +321,33 @@ func TestRepositorySoftDeleteVariantHidesVariant(t *testing.T) {
 	}
 
 	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2", []interface{}{account.BandID, "inventory.variant_deleted"}, 1)
+}
+
+func TestRepositorySoftDeleteLastVariantIsRejected(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	repository := NewRepository(pool)
+
+	product, err := repository.CreateProduct(ctx, validCreateProductCommand(account, "Camisa Final Variant", 2))
+	if err != nil {
+		t.Fatalf("create inventory product: %v", err)
+	}
+
+	err = repository.SoftDeleteVariant(ctx, applicationinventory.SoftDeleteVariantCommand{
+		Account:        account,
+		VariantID:      product.Variants[0].ID,
+		IdempotencyKey: "idem_delete_last_variant",
+		RequestID:      "request_delete_last_variant",
+		DeletedAt:      testTimestamp().Add(time.Minute),
+	})
+	if !errors.Is(err, applicationinventory.ErrLastInventoryVariant) {
+		t.Fatalf("expected final variant error, got %v", err)
+	}
+
+	assertTableCount(t, pool, "merch_variants", "band_id = $1 AND deleted_at IS NULL", []interface{}{account.BandID}, 1)
+	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2", []interface{}{account.BandID, "inventory.variant_deleted"}, 0)
 }
 
 func TestRepositoryUpdateProductWritesAuditLog(t *testing.T) {
@@ -568,7 +633,7 @@ func validCreateProductCommand(account applicationinventory.AccountContext, name
 				Height:      960,
 			},
 		},
-		Variants: []applicationinventory.CreateVariantCommand{
+		Variants: []applicationinventory.CreateProductVariantCommand{
 			{
 				Size:             inventorydomain.SizeM,
 				Colour:           "Preta",

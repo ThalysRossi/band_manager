@@ -220,6 +220,7 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Create product' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit product/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Delete product/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add variant/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit variant/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Delete variant/i })).not.toBeInTheDocument()
   })
@@ -344,9 +345,28 @@ describe('App', () => {
     expect(await screen.findByText('4 in stock')).toBeInTheDocument()
   })
 
-  it('deletes an inventory variant after confirmation', async () => {
+  it('creates an inventory variant for an existing product', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
     setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add variant Logo Shirt' }))
+    fireEvent.change(screen.getByLabelText('New variant size'), { target: { value: 'g' } })
+    fireEvent.change(screen.getByLabelText('New variant colour'), { target: { value: 'Red' } })
+    fireEvent.change(screen.getByLabelText('New variant price (BRL)'), { target: { value: '60' } })
+    fireEvent.change(screen.getByLabelText('New variant cost (BRL)'), { target: { value: '25' } })
+    fireEvent.change(screen.getByLabelText('New variant quantity'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create variant' }))
+
+    expect(await screen.findByText('Variant created.')).toBeInTheDocument()
+    expect(await screen.findByText('2 variants')).toBeInTheDocument()
+    expect(await screen.findByText('G / Red')).toBeInTheDocument()
+  })
+
+  it('deletes an inventory variant after confirmation', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProductWithTwoVariants()])
 
     render(<App />)
 
@@ -354,7 +374,18 @@ describe('App', () => {
 
     expect(window.confirm).toHaveBeenCalledWith('Delete this variant from inventory?')
     expect(await screen.findByText('Variant deleted.')).toBeInTheDocument()
-    expect(await screen.findByText('0 variants')).toBeInTheDocument()
+    expect(await screen.findByText('1 variant')).toBeInTheDocument()
+  })
+
+  it('does not allow deletion of a product final variant', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Delete variant Logo Shirt M / Black' })
+    ).toBeDisabled()
   })
 
   it('logs out from the header account dropdown', async () => {
@@ -512,5 +543,27 @@ function mockInventoryProduct(): InventoryProduct {
     ],
     createdAt: '2026-05-01T12:00:00Z',
     updatedAt: '2026-05-01T12:00:00Z'
+  }
+}
+
+function mockInventoryProductWithTwoVariants(): InventoryProduct {
+  const product = mockInventoryProduct()
+  return {
+    ...product,
+    variants: [
+      ...product.variants,
+      {
+        id: '44444444-4444-4444-4444-444444444445',
+        productId: product.id,
+        size: 'g',
+        colour: 'Black',
+        price: { amount: 5000, currency: 'BRL' },
+        cost: { amount: 2000, currency: 'BRL' },
+        quantity: 2,
+        soldOut: false,
+        createdAt: '2026-05-01T12:00:00Z',
+        updatedAt: '2026-05-01T12:00:00Z'
+      }
+    ]
   }
 }

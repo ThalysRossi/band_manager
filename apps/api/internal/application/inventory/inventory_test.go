@@ -137,6 +137,46 @@ func TestUpdateVariantRejectsNegativeQuantity(t *testing.T) {
 	}
 }
 
+func TestCreateVariantStoresValidatedCommand(t *testing.T) {
+	t.Parallel()
+
+	repository := fakeRepository{
+		variant: Variant{ID: "variant_2"},
+	}
+	input := CreateVariantInput{
+		Account:   validAccountContext(),
+		ProductID: "00000000-0000-0000-0000-000000000002",
+		Variant: VariantInput{
+			Size:        "g",
+			Colour:      " Red ",
+			PriceAmount: 6000,
+			CostAmount:  2500,
+			Currency:    "BRL",
+			Quantity:    3,
+		},
+		IdempotencyKey: "idem_create_variant",
+		RequestID:      "request_create_variant",
+		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.FixedZone("BRT", -3*60*60)),
+	}
+
+	variant, err := CreateVariant(context.Background(), &repository, input)
+	if err != nil {
+		t.Fatalf("create variant: %v", err)
+	}
+
+	if variant.ID != "variant_2" {
+		t.Fatalf("expected created variant, got %q", variant.ID)
+	}
+
+	if repository.createVariantCommand.NormalizedColour != "red" {
+		t.Fatalf("expected normalized colour, got %q", repository.createVariantCommand.NormalizedColour)
+	}
+
+	if repository.createVariantCommand.CreatedAt.Location() != time.UTC {
+		t.Fatalf("expected UTC created at, got %s", repository.createVariantCommand.CreatedAt.Location())
+	}
+}
+
 func TestListInventoryAllowsViewerReadAccess(t *testing.T) {
 	t.Parallel()
 
@@ -215,10 +255,12 @@ func validAccountContext() AccountContext {
 }
 
 type fakeRepository struct {
-	product       Product
-	products      []Product
-	createCommand CreateProductCommand
-	err           error
+	product              Product
+	products             []Product
+	variant              Variant
+	createCommand        CreateProductCommand
+	createVariantCommand CreateVariantCommand
+	err                  error
 }
 
 type fakePhotoStorage struct {
@@ -237,6 +279,19 @@ func (repository *fakeRepository) CreateProduct(ctx context.Context, command Cre
 	}
 
 	return repository.product, nil
+}
+
+func (repository *fakeRepository) CreateVariant(ctx context.Context, command CreateVariantCommand) (Variant, error) {
+	if ctx == nil {
+		return Variant{}, errors.New("context is required")
+	}
+
+	repository.createVariantCommand = command
+	if repository.err != nil {
+		return Variant{}, repository.err
+	}
+
+	return repository.variant, nil
 }
 
 func (repository *fakeRepository) ListInventory(ctx context.Context, query ListInventoryQuery) ([]Product, error) {

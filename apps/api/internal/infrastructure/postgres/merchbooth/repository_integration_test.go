@@ -638,7 +638,7 @@ func createInventoryProduct(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 				Height:      960,
 			},
 		},
-		Variants: []applicationinventory.CreateVariantCommand{
+		Variants: []applicationinventory.CreateProductVariantCommand{
 			{
 				Size:             inventorydomain.SizeM,
 				Colour:           "Preta",

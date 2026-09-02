@@ -480,6 +480,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /inventory/products/{productId}/variants:
+    post:
+      operationId: createInventoryVariant
+      summary: Create an inventory variant for an existing product
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryVariantRequest'
+      responses:
+        '201':
+          description: Inventory variant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryVariant'
+        '400':
+          description: Invalid inventory request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Role cannot mutate inventory in alpha
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Inventory product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate variant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /inventory/variants/{variantId}:
     put:
       operationId: updateInventoryVariant
@@ -567,6 +624,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Inventory variant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Variant cannot be deleted because it is the product's final active variant
           content:
             application/json:
               schema:

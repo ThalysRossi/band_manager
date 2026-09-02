@@ -576,6 +576,10 @@ func (repository testInventoryRepository) CreateProduct(ctx context.Context, com
 	return applicationinventory.Product{}, nil
 }
 
+func (repository testInventoryRepository) CreateVariant(ctx context.Context, command applicationinventory.CreateVariantCommand) (applicationinventory.Variant, error) {
+	return applicationinventory.Variant{}, nil
+}
+
 func (repository testInventoryRepository) ListInventory(ctx context.Context, query applicationinventory.ListInventoryQuery) ([]applicationinventory.Product, error) {
 	return nil, nil
 }

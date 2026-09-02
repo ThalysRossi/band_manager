@@ -212,6 +212,43 @@ func (handler Handler) CreateProduct(response http.ResponseWriter, request *http
 	handler.writeJSON(response, http.StatusCreated, toProductResponse(handler.photoStorage, product))
 }
 
+func (handler Handler) CreateVariant(response http.ResponseWriter, request *http.Request) {
+	accountContext, ok := handler.accountContext(response, request)
+	if !ok {
+		return
+	}
+
+	idempotencyKey, requestID, ok := handler.mutationHeaders(response, request)
+	if !ok {
+		return
+	}
+
+	var body VariantRequest
+	if !handler.decodeJSON(response, request, &body) {
+		return
+	}
+
+	variant, ok := toVariantInput(response, body)
+	if !ok {
+		return
+	}
+
+	createdVariant, err := applicationinventory.CreateVariant(request.Context(), handler.inventoryRepository, applicationinventory.CreateVariantInput{
+		Account:        accountContext,
+		ProductID:      chi.URLParam(request, "productID"),
+		Variant:        variant,
+		IdempotencyKey: idempotencyKey,
+		RequestID:      requestID,
+		CreatedAt:      handler.now().UTC(),
+	})
+	if err != nil {
+		handler.writeInventoryError(response, "inventory variant create failed", err)
+		return
+	}
+
+	handler.writeJSON(response, http.StatusCreated, toVariantResponse(createdVariant))
+}
+
 func (handler Handler) ListInventory(response http.ResponseWriter, request *http.Request) {
 	accountContext, ok := handler.accountContext(response, request)
 	if !ok {
@@ -383,6 +420,8 @@ func (handler Handler) writeInventoryError(response http.ResponseWriter, logMess
 		handler.writeError(response, http.StatusConflict, "duplicate_product", err.Error())
 	case errors.Is(err, applicationinventory.ErrDuplicateVariant):
 		handler.writeError(response, http.StatusConflict, "duplicate_variant", err.Error())
+	case errors.Is(err, applicationinventory.ErrLastInventoryVariant):
+		handler.writeError(response, http.StatusConflict, "last_inventory_variant", err.Error())
 	case errors.Is(err, applicationinventory.ErrInventoryNotFound):
 		handler.writeError(response, http.StatusNotFound, "inventory_not_found", err.Error())
 	case strings.Contains(err.Error(), "alpha write access requires owner role"):

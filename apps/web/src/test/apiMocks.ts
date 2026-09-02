@@ -4,6 +4,7 @@ import type { AccountInvite, AccountMember, Role } from '../features/account/api
 import type { CurrentAccountResponse } from '../features/auth/api'
 import type {
   CreateInventoryProductRequest,
+  CreateInventoryVariantRequest,
   InventoryPhoto,
   InventoryPhotoUploadResponse,
   InventoryProduct,
@@ -97,6 +98,42 @@ export const apiHandlers = [
 
     return HttpResponse.json(createdProduct, { status: 201 })
   }),
+  http.post(`${apiBaseURL}/inventory/products/:productID/variants`, async ({ params, request }) => {
+    const productID = routeParam(params.productID)
+    const body = (await request.json()) as CreateInventoryVariantRequest
+    const product = mockAPIState.inventoryProducts.find((inventoryProduct) => {
+      return inventoryProduct.id === productID
+    })
+    if (product === undefined) {
+      return HttpResponse.json(
+        { code: 'inventory_not_found', message: 'Inventory product not found' },
+        { status: 404 }
+      )
+    }
+
+    const createdVariant: InventoryVariant = {
+      id: '55555555-5555-5555-5555-555555555555',
+      productId: product.id,
+      size: body.size,
+      colour: body.colour,
+      price: body.price,
+      cost: body.cost,
+      quantity: body.quantity,
+      soldOut: body.quantity === 0,
+      createdAt: '2026-05-01T13:00:00Z',
+      updatedAt: '2026-05-01T13:00:00Z'
+    }
+    const updatedProduct: InventoryProduct = {
+      ...product,
+      variants: [...product.variants, createdVariant],
+      updatedAt: '2026-05-01T13:00:00Z'
+    }
+    mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.map((inventoryProduct) => {
+      return inventoryProduct.id === product.id ? updatedProduct : inventoryProduct
+    })
+
+    return HttpResponse.json(createdVariant, { status: 201 })
+  }),
   http.put(`${apiBaseURL}/inventory/products/:productID`, async ({ params, request }) => {
     const productID = routeParam(params.productID)
     const body = (await request.json()) as UpdateInventoryProductRequest
@@ -177,6 +214,25 @@ export const apiHandlers = [
   }),
   http.delete(`${apiBaseURL}/inventory/variants/:variantID`, ({ params }) => {
     const variantID = routeParam(params.variantID)
+    const product = mockAPIState.inventoryProducts.find((inventoryProduct) => {
+      return inventoryProduct.variants.some((variant) => variant.id === variantID)
+    })
+    if (product === undefined) {
+      return HttpResponse.json(
+        { code: 'inventory_not_found', message: 'Inventory variant not found' },
+        { status: 404 }
+      )
+    }
+    if (product.variants.length === 1) {
+      return HttpResponse.json(
+        {
+          code: 'last_inventory_variant',
+          message: 'cannot delete the final inventory variant'
+        },
+        { status: 409 }
+      )
+    }
+
     mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.map((product) => {
       return {
         ...product,

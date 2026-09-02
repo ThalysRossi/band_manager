@@ -62,6 +62,7 @@ export type TranslationKey =
   | 'account.statusHeader'
   | 'account.title'
   | 'inventory.addVariant'
+  | 'inventory.addVariantSuccess'
   | 'inventory.actionsHeader'
   | 'inventory.cancelEdit'
   | 'inventory.category.accessory'
@@ -80,6 +81,7 @@ export type TranslationKey =
   | 'inventory.createSubmit'
   | 'inventory.createSuccess'
   | 'inventory.createTitle'
+  | 'inventory.createVariantSubmit'
   | 'inventory.deleteConfirm'
   | 'inventory.deleteProduct'
   | 'inventory.deleteSuccess'
@@ -103,7 +105,13 @@ export type TranslationKey =
   | 'inventory.inStock'
   | 'inventory.inStockCountSuffix'
   | 'inventory.loading'
+  | 'inventory.lastVariantDeleteDisabled'
   | 'inventory.nameLabel'
+  | 'inventory.newVariantColourLabel'
+  | 'inventory.newVariantCostLabel'
+  | 'inventory.newVariantPriceLabel'
+  | 'inventory.newVariantQuantityLabel'
+  | 'inventory.newVariantSizeLabel'
   | 'inventory.photoInvalid'
   | 'inventory.photoLabel'
   | 'inventory.photoPreviewAlt'
@@ -210,6 +218,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Account',
     'inventory.addVariant': 'Add variant',
+    'inventory.addVariantSuccess': 'Variant created.',
     'inventory.actionsHeader': 'Actions',
     'inventory.cancelEdit': 'Cancel',
     'inventory.category.accessory': 'Accessory',
@@ -228,6 +237,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.createSubmit': 'Create product',
     'inventory.createSuccess': 'Product created.',
     'inventory.createTitle': 'Create product',
+    'inventory.createVariantSubmit': 'Create variant',
     'inventory.deleteConfirm': 'Delete this product from inventory?',
     'inventory.deleteProduct': 'Delete product',
     'inventory.deleteSuccess': 'Product deleted.',
@@ -251,7 +261,14 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.inStock': 'In stock',
     'inventory.inStockCountSuffix': 'in stock',
     'inventory.loading': 'Loading inventory...',
+    'inventory.lastVariantDeleteDisabled':
+      'Delete the product to remove its final variant.',
     'inventory.nameLabel': 'Product name',
+    'inventory.newVariantColourLabel': 'New variant colour',
+    'inventory.newVariantCostLabel': 'New variant cost (BRL)',
+    'inventory.newVariantPriceLabel': 'New variant price (BRL)',
+    'inventory.newVariantQuantityLabel': 'New variant quantity',
+    'inventory.newVariantSizeLabel': 'New variant size',
     'inventory.photoInvalid': 'Photo could not be processed.',
     'inventory.photoLabel': 'Photo',
     'inventory.photoPreviewAlt': 'Product photo preview',
@@ -356,6 +373,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Conta',
     'inventory.addVariant': 'Adicionar variante',
+    'inventory.addVariantSuccess': 'Variante criada.',
     'inventory.actionsHeader': 'Acoes',
     'inventory.cancelEdit': 'Cancelar',
     'inventory.category.accessory': 'Acessorio',
@@ -374,6 +392,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.createSubmit': 'Criar produto',
     'inventory.createSuccess': 'Produto criado.',
     'inventory.createTitle': 'Criar produto',
+    'inventory.createVariantSubmit': 'Criar variante',
     'inventory.deleteConfirm': 'Remover este produto do estoque?',
     'inventory.deleteProduct': 'Remover produto',
     'inventory.deleteSuccess': 'Produto removido.',
@@ -397,7 +416,14 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.inStock': 'Em estoque',
     'inventory.inStockCountSuffix': 'em estoque',
     'inventory.loading': 'Carregando estoque...',
+    'inventory.lastVariantDeleteDisabled':
+      'Remova o produto para excluir sua ultima variante.',
     'inventory.nameLabel': 'Nome do produto',
+    'inventory.newVariantColourLabel': 'Cor da nova variante',
+    'inventory.newVariantCostLabel': 'Custo da nova variante (BRL)',
+    'inventory.newVariantPriceLabel': 'Preco da nova variante (BRL)',
+    'inventory.newVariantQuantityLabel': 'Quantidade da nova variante',
+    'inventory.newVariantSizeLabel': 'Tamanho da nova variante',
     'inventory.photoInvalid': 'Nao foi possivel processar a foto.',
     'inventory.photoLabel': 'Foto',
     'inventory.photoPreviewAlt': 'Previa da foto do produto',

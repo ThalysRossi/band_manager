@@ -87,6 +87,12 @@ export type CreateInventoryProductRequest = {
   variants: InventoryVariantRequest[]
 }
 
+export type UpdateInventoryProductRequest = {
+  name: string
+  category: InventoryCategory
+  photo: InventoryPhotoManifest
+}
+
 export type PhotoUploadVariantRequest = {
   contentType: 'image/webp'
   sizeBytes: number
@@ -181,6 +187,37 @@ export async function createInventoryProduct(
       photo: request.photo,
       variants: request.variants
     },
+    idempotent: true
+  })
+}
+
+export async function updateInventoryProduct(
+  accessToken: string,
+  productID: string,
+  request: UpdateInventoryProductRequest
+): Promise<InventoryProduct> {
+  return apiRequest<InventoryProduct>({
+    accessToken,
+    path: `/inventory/products/${productID}`,
+    method: 'PUT',
+    body: {
+      name: request.name,
+      category: request.category,
+      photo: request.photo
+    },
+    idempotent: true
+  })
+}
+
+export async function deleteInventoryProduct(
+  accessToken: string,
+  productID: string
+): Promise<void> {
+  await apiRequest<void>({
+    accessToken,
+    path: `/inventory/products/${productID}`,
+    method: 'DELETE',
+    body: null,
     idempotent: true
   })
 }

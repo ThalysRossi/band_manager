@@ -69,6 +69,10 @@ describe('App', () => {
       value: vi.fn(),
       configurable: true
     })
+    Object.defineProperty(window, 'confirm', {
+      value: vi.fn(() => true),
+      configurable: true
+    })
     vi.stubGlobal('crypto', {
       randomUUID: () => 'test-idempotency-key'
     })
@@ -208,11 +212,14 @@ describe('App', () => {
   it('hides inventory create controls for a viewer', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
     setMockCurrentAccountRole('viewer')
+    setMockInventoryProducts([mockInventoryProduct()])
 
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create product' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Edit product/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Delete product/i })).not.toBeInTheDocument()
   })
 
   it('creates an inventory product with photo upload', async () => {
@@ -282,6 +289,39 @@ describe('App', () => {
       await screen.findByText('Photo upload request failed. Restart the API and check VITE_API_BASE_URL.')
     ).toBeInTheDocument()
     expect(mockCreatedProductCount()).toBe(0)
+  })
+
+  it('updates inventory product metadata', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit product Logo Shirt' }))
+    fireEvent.change(screen.getByLabelText('Edit product name'), {
+      target: { value: 'Tour Hoodie' }
+    })
+    fireEvent.change(screen.getByLabelText('Edit category'), {
+      target: { value: 'hoodie' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save product' }))
+
+    expect(await screen.findByText('Product updated.')).toBeInTheDocument()
+    expect(await screen.findByText('Tour Hoodie')).toBeInTheDocument()
+    expect(screen.getAllByText('Hoodie').length).toBeGreaterThan(0)
+  })
+
+  it('deletes an inventory product after confirmation', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete product Logo Shirt' }))
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete this product from inventory?')
+    expect(await screen.findByText('Product deleted.')).toBeInTheDocument()
+    expect(await screen.findByText('No inventory products yet.')).toBeInTheDocument()
   })
 
   it('logs out from the header account dropdown', async () => {

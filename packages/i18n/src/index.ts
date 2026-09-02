@@ -62,6 +62,8 @@ export type TranslationKey =
   | 'account.statusHeader'
   | 'account.title'
   | 'inventory.addVariant'
+  | 'inventory.actionsHeader'
+  | 'inventory.cancelEdit'
   | 'inventory.category.accessory'
   | 'inventory.category.cassette'
   | 'inventory.category.cd'
@@ -78,6 +80,13 @@ export type TranslationKey =
   | 'inventory.createSubmit'
   | 'inventory.createSuccess'
   | 'inventory.createTitle'
+  | 'inventory.deleteConfirm'
+  | 'inventory.deleteProduct'
+  | 'inventory.deleteSuccess'
+  | 'inventory.editCategoryLabel'
+  | 'inventory.editNameLabel'
+  | 'inventory.editProduct'
+  | 'inventory.editTitle'
   | 'inventory.empty'
   | 'inventory.error'
   | 'inventory.formInvalid'
@@ -109,6 +118,8 @@ export type TranslationKey =
   | 'inventory.soldOut'
   | 'inventory.statusHeader'
   | 'inventory.stockHeader'
+  | 'inventory.updateSubmit'
+  | 'inventory.updateSuccess'
   | 'inventory.variantsHeader'
   | 'inventory.variantsTitle'
   | 'nav.inventory'
@@ -184,6 +195,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Account',
     'inventory.addVariant': 'Add variant',
+    'inventory.actionsHeader': 'Actions',
+    'inventory.cancelEdit': 'Cancel',
     'inventory.category.accessory': 'Accessory',
     'inventory.category.cassette': 'Cassette',
     'inventory.category.cd': 'CD',
@@ -200,6 +213,13 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.createSubmit': 'Create product',
     'inventory.createSuccess': 'Product created.',
     'inventory.createTitle': 'Create product',
+    'inventory.deleteConfirm': 'Delete this product from inventory?',
+    'inventory.deleteProduct': 'Delete product',
+    'inventory.deleteSuccess': 'Product deleted.',
+    'inventory.editCategoryLabel': 'Edit category',
+    'inventory.editNameLabel': 'Edit product name',
+    'inventory.editProduct': 'Edit product',
+    'inventory.editTitle': 'Edit product',
     'inventory.empty': 'No inventory products yet.',
     'inventory.error': 'Inventory request failed.',
     'inventory.formInvalid': 'Check the inventory form and try again.',
@@ -232,6 +252,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.soldOut': 'Sold out',
     'inventory.statusHeader': 'Status',
     'inventory.stockHeader': 'Stock',
+    'inventory.updateSubmit': 'Save product',
+    'inventory.updateSuccess': 'Product updated.',
     'inventory.variantsHeader': 'Variants',
     'inventory.variantsTitle': 'Variants',
     'nav.inventory': 'Inventory',
@@ -304,6 +326,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Conta',
     'inventory.addVariant': 'Adicionar variante',
+    'inventory.actionsHeader': 'Acoes',
+    'inventory.cancelEdit': 'Cancelar',
     'inventory.category.accessory': 'Acessorio',
     'inventory.category.cassette': 'Fita',
     'inventory.category.cd': 'CD',
@@ -320,6 +344,13 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.createSubmit': 'Criar produto',
     'inventory.createSuccess': 'Produto criado.',
     'inventory.createTitle': 'Criar produto',
+    'inventory.deleteConfirm': 'Remover este produto do estoque?',
+    'inventory.deleteProduct': 'Remover produto',
+    'inventory.deleteSuccess': 'Produto removido.',
+    'inventory.editCategoryLabel': 'Editar categoria',
+    'inventory.editNameLabel': 'Editar nome do produto',
+    'inventory.editProduct': 'Editar produto',
+    'inventory.editTitle': 'Editar produto',
     'inventory.empty': 'Nenhum produto no estoque ainda.',
     'inventory.error': 'A requisicao do estoque falhou.',
     'inventory.formInvalid': 'Confira o formulario do estoque e tente novamente.',
@@ -352,6 +383,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.soldOut': 'Esgotado',
     'inventory.statusHeader': 'Status',
     'inventory.stockHeader': 'Estoque',
+    'inventory.updateSubmit': 'Salvar produto',
+    'inventory.updateSuccess': 'Produto atualizado.',
     'inventory.variantsHeader': 'Variantes',
     'inventory.variantsTitle': 'Variantes',
     'nav.inventory': 'Estoque',

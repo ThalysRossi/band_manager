@@ -5,7 +5,7 @@ type RequestBody = Record<string, unknown>
 type ApiRequest = {
   accessToken: string
   path: string
-  method: 'GET' | 'POST'
+  method: 'DELETE' | 'GET' | 'POST' | 'PUT'
   body: RequestBody | null
   idempotent: boolean
 }
@@ -37,6 +37,10 @@ export function apiBaseURL(): string {
 }
 
 async function parseJSONResponse<TResponse>(response: Response): Promise<TResponse> {
+  if (response.status === 204) {
+    return undefined as TResponse
+  }
+
   const body = await response.json()
   if (!response.ok) {
     throw new ApiError(response.status, errorCode(body), errorMessage(body))

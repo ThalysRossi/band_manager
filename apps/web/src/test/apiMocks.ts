@@ -6,7 +6,8 @@ import type {
   CreateInventoryProductRequest,
   InventoryPhoto,
   InventoryPhotoUploadResponse,
-  InventoryProduct
+  InventoryProduct,
+  UpdateInventoryProductRequest
 } from '../features/inventory/api'
 
 type MockCurrentAccountRole = Extract<Role, 'owner' | 'viewer'>
@@ -93,6 +94,40 @@ export const apiHandlers = [
     mockAPIState.inventoryProducts = [...mockAPIState.inventoryProducts, createdProduct]
 
     return HttpResponse.json(createdProduct, { status: 201 })
+  }),
+  http.put(`${apiBaseURL}/inventory/products/:productID`, async ({ params, request }) => {
+    const productID = routeParam(params.productID)
+    const body = (await request.json()) as UpdateInventoryProductRequest
+    const product = mockAPIState.inventoryProducts.find((inventoryProduct) => {
+      return inventoryProduct.id === productID
+    })
+    if (product === undefined) {
+      return HttpResponse.json(
+        { code: 'inventory_not_found', message: 'Inventory product not found' },
+        { status: 404 }
+      )
+    }
+
+    const updatedProduct: InventoryProduct = {
+      ...product,
+      name: body.name,
+      category: body.category,
+      photo: inventoryPhotoFromRequest(body.photo),
+      updatedAt: '2026-05-01T13:00:00Z'
+    }
+    mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.map((inventoryProduct) => {
+      return inventoryProduct.id === productID ? updatedProduct : inventoryProduct
+    })
+
+    return HttpResponse.json(updatedProduct, { status: 200 })
+  }),
+  http.delete(`${apiBaseURL}/inventory/products/:productID`, ({ params }) => {
+    const productID = routeParam(params.productID)
+    mockAPIState.inventoryProducts = mockAPIState.inventoryProducts.filter((product) => {
+      return product.id !== productID
+    })
+
+    return new HttpResponse(null, { status: 204 })
   })
 ]
 
@@ -279,4 +314,12 @@ function inventoryPhotoFromRequest(photo: CreateInventoryProductRequest['photo']
       publicUrl: 'https://storage.example/display-public.webp'
     }
   }
+}
+
+function routeParam(param: string | readonly string[] | undefined): string {
+  if (typeof param !== 'string' || param.trim() === '') {
+    throw new Error('Route parameter is required')
+  }
+
+  return param
 }

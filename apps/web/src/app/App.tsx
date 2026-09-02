@@ -35,6 +35,7 @@ import {
 } from '../features/auth/AuthPages'
 import { finishAuthCallback, getCurrentAccount } from '../features/auth/api'
 import type { CurrentAccountResponse } from '../features/auth/api'
+import { InventoryPage as InventoryFeaturePage } from '../features/inventory/InventoryPage'
 import { ApiError } from '../shared/api/client'
 import { AuthSessionProvider, useAuthSession } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
@@ -247,9 +248,14 @@ function RootLayout() {
 }
 
 function InventoryPage() {
+  const translate = useTranslate()
+  const session = useAuthSession()
+
   return (
     <ProtectedRoute redirect="/">
-      <WorkspaceHeader titleKey="nav.inventory" />
+      {session.state.status === 'authenticated' ? (
+        <InventoryFeaturePage accessToken={session.state.accessToken} translate={translate} />
+      ) : null}
     </ProtectedRoute>
   )
 }

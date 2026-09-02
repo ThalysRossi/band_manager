@@ -61,6 +61,56 @@ export type TranslationKey =
   | 'account.roleHeader'
   | 'account.statusHeader'
   | 'account.title'
+  | 'inventory.addVariant'
+  | 'inventory.category.accessory'
+  | 'inventory.category.cassette'
+  | 'inventory.category.cd'
+  | 'inventory.category.hoodie'
+  | 'inventory.category.patch'
+  | 'inventory.category.shirt'
+  | 'inventory.category.sticker'
+  | 'inventory.category.tote_bag'
+  | 'inventory.category.vinyl'
+  | 'inventory.categoryHeader'
+  | 'inventory.categoryLabel'
+  | 'inventory.colourLabel'
+  | 'inventory.costLabel'
+  | 'inventory.createSubmit'
+  | 'inventory.createSuccess'
+  | 'inventory.createTitle'
+  | 'inventory.empty'
+  | 'inventory.error'
+  | 'inventory.formInvalid'
+  | 'inventory.inStock'
+  | 'inventory.loading'
+  | 'inventory.nameLabel'
+  | 'inventory.photoInvalid'
+  | 'inventory.photoLabel'
+  | 'inventory.photoPreviewAlt'
+  | 'inventory.photoProcessing'
+  | 'inventory.photoReady'
+  | 'inventory.photoRequired'
+  | 'inventory.photoUploadFailed'
+  | 'inventory.photoUploadRequestFailed'
+  | 'inventory.priceLabel'
+  | 'inventory.productCount'
+  | 'inventory.productHeader'
+  | 'inventory.quantityLabel'
+  | 'inventory.removeVariant'
+  | 'inventory.size.g'
+  | 'inventory.size.gg'
+  | 'inventory.size.m'
+  | 'inventory.size.not_applicable'
+  | 'inventory.size.one_size'
+  | 'inventory.size.p'
+  | 'inventory.size.pp'
+  | 'inventory.size.xgg'
+  | 'inventory.sizeLabel'
+  | 'inventory.soldOut'
+  | 'inventory.statusHeader'
+  | 'inventory.stockHeader'
+  | 'inventory.variantsHeader'
+  | 'inventory.variantsTitle'
   | 'nav.inventory'
   | 'nav.merchBooth'
   | 'nav.reports'
@@ -133,6 +183,57 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.roleHeader': 'Role',
     'account.statusHeader': 'Status',
     'account.title': 'Account',
+    'inventory.addVariant': 'Add variant',
+    'inventory.category.accessory': 'Accessory',
+    'inventory.category.cassette': 'Cassette',
+    'inventory.category.cd': 'CD',
+    'inventory.category.hoodie': 'Hoodie',
+    'inventory.category.patch': 'Patch',
+    'inventory.category.shirt': 'Shirt',
+    'inventory.category.sticker': 'Sticker',
+    'inventory.category.tote_bag': 'Tote bag',
+    'inventory.category.vinyl': 'Vinyl',
+    'inventory.categoryHeader': 'Category',
+    'inventory.categoryLabel': 'Category',
+    'inventory.colourLabel': 'Colour',
+    'inventory.costLabel': 'Cost (BRL)',
+    'inventory.createSubmit': 'Create product',
+    'inventory.createSuccess': 'Product created.',
+    'inventory.createTitle': 'Create product',
+    'inventory.empty': 'No inventory products yet.',
+    'inventory.error': 'Inventory request failed.',
+    'inventory.formInvalid': 'Check the inventory form and try again.',
+    'inventory.inStock': 'In stock',
+    'inventory.loading': 'Loading inventory...',
+    'inventory.nameLabel': 'Product name',
+    'inventory.photoInvalid': 'Photo could not be processed.',
+    'inventory.photoLabel': 'Photo',
+    'inventory.photoPreviewAlt': 'Product photo preview',
+    'inventory.photoProcessing': 'Processing photo',
+    'inventory.photoReady': 'Photo ready',
+    'inventory.photoRequired': 'Photo is required.',
+    'inventory.photoUploadFailed': 'Photo upload failed.',
+    'inventory.photoUploadRequestFailed':
+      'Photo upload request failed. Restart the API and check VITE_API_BASE_URL.',
+    'inventory.priceLabel': 'Price (BRL)',
+    'inventory.productCount': 'Products',
+    'inventory.productHeader': 'Product',
+    'inventory.quantityLabel': 'Quantity',
+    'inventory.removeVariant': 'Remove variant',
+    'inventory.size.g': 'G',
+    'inventory.size.gg': 'GG',
+    'inventory.size.m': 'M',
+    'inventory.size.not_applicable': 'Not applicable',
+    'inventory.size.one_size': 'One size',
+    'inventory.size.p': 'P',
+    'inventory.size.pp': 'PP',
+    'inventory.size.xgg': 'XGG',
+    'inventory.sizeLabel': 'Size',
+    'inventory.soldOut': 'Sold out',
+    'inventory.statusHeader': 'Status',
+    'inventory.stockHeader': 'Stock',
+    'inventory.variantsHeader': 'Variants',
+    'inventory.variantsTitle': 'Variants',
     'nav.inventory': 'Inventory',
     'nav.merchBooth': 'Merch Booth',
     'nav.reports': 'Reports',
@@ -202,6 +303,57 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.roleHeader': 'Papel',
     'account.statusHeader': 'Status',
     'account.title': 'Conta',
+    'inventory.addVariant': 'Adicionar variante',
+    'inventory.category.accessory': 'Acessorio',
+    'inventory.category.cassette': 'Fita',
+    'inventory.category.cd': 'CD',
+    'inventory.category.hoodie': 'Moletom',
+    'inventory.category.patch': 'Patch',
+    'inventory.category.shirt': 'Camiseta',
+    'inventory.category.sticker': 'Adesivo',
+    'inventory.category.tote_bag': 'Ecobag',
+    'inventory.category.vinyl': 'Vinil',
+    'inventory.categoryHeader': 'Categoria',
+    'inventory.categoryLabel': 'Categoria',
+    'inventory.colourLabel': 'Cor',
+    'inventory.costLabel': 'Custo (BRL)',
+    'inventory.createSubmit': 'Criar produto',
+    'inventory.createSuccess': 'Produto criado.',
+    'inventory.createTitle': 'Criar produto',
+    'inventory.empty': 'Nenhum produto no estoque ainda.',
+    'inventory.error': 'A requisicao do estoque falhou.',
+    'inventory.formInvalid': 'Confira o formulario do estoque e tente novamente.',
+    'inventory.inStock': 'Em estoque',
+    'inventory.loading': 'Carregando estoque...',
+    'inventory.nameLabel': 'Nome do produto',
+    'inventory.photoInvalid': 'Nao foi possivel processar a foto.',
+    'inventory.photoLabel': 'Foto',
+    'inventory.photoPreviewAlt': 'Previa da foto do produto',
+    'inventory.photoProcessing': 'Processando foto',
+    'inventory.photoReady': 'Foto pronta',
+    'inventory.photoRequired': 'A foto e obrigatoria.',
+    'inventory.photoUploadFailed': 'O upload da foto falhou.',
+    'inventory.photoUploadRequestFailed':
+      'A requisicao de upload da foto falhou. Reinicie a API e confira VITE_API_BASE_URL.',
+    'inventory.priceLabel': 'Preco (BRL)',
+    'inventory.productCount': 'Produtos',
+    'inventory.productHeader': 'Produto',
+    'inventory.quantityLabel': 'Quantidade',
+    'inventory.removeVariant': 'Remover variante',
+    'inventory.size.g': 'G',
+    'inventory.size.gg': 'GG',
+    'inventory.size.m': 'M',
+    'inventory.size.not_applicable': 'Nao aplicavel',
+    'inventory.size.one_size': 'Tamanho unico',
+    'inventory.size.p': 'P',
+    'inventory.size.pp': 'PP',
+    'inventory.size.xgg': 'XGG',
+    'inventory.sizeLabel': 'Tamanho',
+    'inventory.soldOut': 'Esgotado',
+    'inventory.statusHeader': 'Status',
+    'inventory.stockHeader': 'Estoque',
+    'inventory.variantsHeader': 'Variantes',
+    'inventory.variantsTitle': 'Variantes',
     'nav.inventory': 'Estoque',
     'nav.merchBooth': 'Banca',
     'nav.reports': 'Relatorios',

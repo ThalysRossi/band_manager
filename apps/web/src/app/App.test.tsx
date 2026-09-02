@@ -1,7 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { setMockCurrentAccountExists, setMockCurrentAccountRole } from '../test/apiMocks'
+import type { InventoryProduct } from '../features/inventory/api'
+import {
+  mockCreatedProductCount,
+  setMockCurrentAccountExists,
+  setMockCurrentAccountRole,
+  setMockInventoryProducts,
+  setMockPhotoUploadRequestFails,
+  setMockStorageUploadFails
+} from '../test/apiMocks'
 import { App } from './App'
 
 const supabaseMock = vi.hoisted(() => {
@@ -11,6 +19,12 @@ const supabaseMock = vi.hoisted(() => {
     signOut: vi.fn(),
     signUp: vi.fn(),
     unsubscribe: vi.fn()
+  }
+})
+
+const photoProcessingMock = vi.hoisted(() => {
+  return {
+    processInventoryPhoto: vi.fn()
   }
 })
 
@@ -34,6 +48,8 @@ vi.mock('@supabase/supabase-js', () => {
   }
 })
 
+vi.mock('../features/inventory/photoProcessing', () => photoProcessingMock)
+
 describe('App', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/')
@@ -42,8 +58,17 @@ describe('App', () => {
     supabaseMock.signOut.mockReset()
     supabaseMock.signUp.mockReset()
     supabaseMock.unsubscribe.mockReset()
+    photoProcessingMock.processInventoryPhoto.mockReset()
     supabaseMock.getSession.mockResolvedValue({ data: { session: null } })
     supabaseMock.signOut.mockResolvedValue({ error: null })
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn(() => 'blob:inventory-preview'),
+      configurable: true
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      configurable: true
+    })
     vi.stubGlobal('crypto', {
       randomUUID: () => 'test-idempotency-key'
     })
@@ -159,6 +184,106 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument()
   })
 
+  it('renders the empty inventory state for an owner', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
+    expect(await screen.findByText('No inventory products yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create product' })).toBeInTheDocument()
+  })
+
+  it('renders inventory products', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+
+    render(<App />)
+
+    expect(await screen.findByText('Logo Shirt')).toBeInTheDocument()
+    expect(screen.getAllByText('Shirt').length).toBeGreaterThan(0)
+    expect(screen.getByText('In stock')).toBeInTheDocument()
+  })
+
+  it('hides inventory create controls for a viewer', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockCurrentAccountRole('viewer')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create product' })).not.toBeInTheDocument()
+  })
+
+  it('creates an inventory product with photo upload', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    photoProcessingMock.processInventoryPhoto.mockResolvedValue(processedInventoryPhoto())
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Product name'), {
+      target: { value: 'Logo Shirt' }
+    })
+    fireEvent.change(screen.getByLabelText('Photo'), {
+      target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] }
+    })
+    fireEvent.change(screen.getByLabelText('Colour'), { target: { value: 'Black' } })
+    fireEvent.change(screen.getByLabelText('Price (BRL)'), { target: { value: '50' } })
+    fireEvent.change(screen.getByLabelText('Cost (BRL)'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '2' } })
+
+    expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
+
+    expect(await screen.findByText('Product created.')).toBeInTheDocument()
+    expect(await screen.findByText('Logo Shirt')).toBeInTheDocument()
+    expect(mockCreatedProductCount()).toBe(1)
+  })
+
+  it('does not create an inventory product when photo upload fails', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    photoProcessingMock.processInventoryPhoto.mockResolvedValue(processedInventoryPhoto())
+    setMockStorageUploadFails(true)
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Product name'), {
+      target: { value: 'Broken Shirt' }
+    })
+    fireEvent.change(screen.getByLabelText('Photo'), {
+      target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] }
+    })
+
+    expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
+
+    expect(await screen.findByText('Photo upload failed.')).toBeInTheDocument()
+    expect(mockCreatedProductCount()).toBe(0)
+  })
+
+  it('does not create an inventory product when the photo upload request fails', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    photoProcessingMock.processInventoryPhoto.mockResolvedValue(processedInventoryPhoto())
+    setMockPhotoUploadRequestFails(true)
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Product name'), {
+      target: { value: 'Broken Shirt' }
+    })
+    fireEvent.change(screen.getByLabelText('Photo'), {
+      target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] }
+    })
+
+    expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
+
+    expect(
+      await screen.findByText('Photo upload request failed. Restart the API and check VITE_API_BASE_URL.')
+    ).toBeInTheDocument()
+    expect(mockCreatedProductCount()).toBe(0)
+  })
+
   it('logs out from the header account dropdown', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
     window.history.pushState({}, '', '/merch-booth')
@@ -252,5 +377,67 @@ function authenticatedSession() {
         }
       }
     }
+  }
+}
+
+function processedInventoryPhoto() {
+  return {
+    full: {
+      blob: new Blob(['full'], { type: 'image/webp' }),
+      contentType: 'image/webp',
+      sizeBytes: 1024,
+      width: 1200,
+      height: 900
+    },
+    display: {
+      blob: new Blob(['display'], { type: 'image/webp' }),
+      contentType: 'image/webp',
+      sizeBytes: 512,
+      width: 1280,
+      height: 960
+    }
+  }
+}
+
+function mockInventoryProduct(): InventoryProduct {
+  return {
+    id: '33333333-3333-3333-3333-333333333333',
+    bandId: '00000000-0000-0000-0000-000000000002',
+    name: 'Logo Shirt',
+    category: 'shirt',
+    photo: {
+      full: {
+        objectKey: 'bands/test/photo/full.webp',
+        contentType: 'image/webp',
+        sizeBytes: 1024,
+        width: 1200,
+        height: 900,
+        publicUrl: 'https://storage.example/full-public.webp'
+      },
+      display: {
+        objectKey: 'bands/test/photo/display.webp',
+        contentType: 'image/webp',
+        sizeBytes: 512,
+        width: 1280,
+        height: 960,
+        publicUrl: 'https://storage.example/display-public.webp'
+      }
+    },
+    variants: [
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        productId: '33333333-3333-3333-3333-333333333333',
+        size: 'm',
+        colour: 'Black',
+        price: { amount: 5000, currency: 'BRL' },
+        cost: { amount: 2000, currency: 'BRL' },
+        quantity: 2,
+        soldOut: false,
+        createdAt: '2026-05-01T12:00:00Z',
+        updatedAt: '2026-05-01T12:00:00Z'
+      }
+    ],
+    createdAt: '2026-05-01T12:00:00Z',
+    updatedAt: '2026-05-01T12:00:00Z'
   }
 }

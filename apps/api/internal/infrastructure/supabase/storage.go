@@ -21,7 +21,7 @@ type StorageClient struct {
 	storageURL      string
 	publicObjectURL string
 	bucket          string
-	serviceRoleKey  string
+	secretKey       string
 	httpClient      *http.Client
 	logger          *slog.Logger
 	now             func() time.Time
@@ -36,15 +36,15 @@ type objectInfoResponse struct {
 	ContentType string `json:"content_type"`
 }
 
-func NewStorageClient(supabaseURL string, serviceRoleKey string, bucket string, httpClient *http.Client, logger *slog.Logger) (StorageClient, error) {
+func NewStorageClient(supabaseURL string, secretKey string, bucket string, httpClient *http.Client, logger *slog.Logger) (StorageClient, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(supabaseURL), "/")
 	if baseURL == "" {
 		return StorageClient{}, fmt.Errorf("supabase url is required")
 	}
 
-	trimmedServiceRoleKey := strings.TrimSpace(serviceRoleKey)
-	if trimmedServiceRoleKey == "" {
-		return StorageClient{}, fmt.Errorf("supabase service role key is required")
+	trimmedSecretKey := strings.TrimSpace(secretKey)
+	if trimmedSecretKey == "" {
+		return StorageClient{}, fmt.Errorf("supabase secret key is required")
 	}
 
 	trimmedBucket := strings.TrimSpace(bucket)
@@ -65,7 +65,7 @@ func NewStorageClient(supabaseURL string, serviceRoleKey string, bucket string, 
 		storageURL:      storageURL,
 		publicObjectURL: storageURL + "/object/public/" + pathEscape(trimmedBucket),
 		bucket:          trimmedBucket,
-		serviceRoleKey:  trimmedServiceRoleKey,
+		secretKey:       trimmedSecretKey,
 		httpClient:      httpClient,
 		logger:          logger,
 		now:             time.Now,
@@ -171,8 +171,8 @@ func (client StorageClient) PublicURL(objectKey string) string {
 }
 
 func (client StorageClient) applyStorageHeaders(request *http.Request) {
-	request.Header.Set("Authorization", "Bearer "+client.serviceRoleKey)
-	request.Header.Set("apikey", client.serviceRoleKey)
+	request.Header.Set("Authorization", "Bearer "+client.secretKey)
+	request.Header.Set("apikey", client.secretKey)
 	request.Header.Set("Content-Type", "application/json")
 }
 

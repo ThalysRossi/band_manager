@@ -86,7 +86,7 @@ func TestVerifiedUserInspectorRequiresConfirmedEmail(t *testing.T) {
 
 	inspector, err := NewVerifiedUserInspector(
 		"https://example.supabase.co",
-		"anon-key",
+		"publishable-key",
 		&http.Client{Transport: responseTransport{statusCode: http.StatusOK, body: `{"id":"user_1","email":"band@example.com","email_confirmed_at":null}`}},
 		slog.Default(),
 	)

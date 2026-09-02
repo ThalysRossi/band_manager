@@ -54,7 +54,9 @@ API_ALLOWED_ORIGINS=http://localhost:5173 \
 DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable \
 REDIS_URL=redis://localhost:6379/0 \
 SUPABASE_URL=https://example.supabase.co \
-SUPABASE_ANON_KEY=replace-me \
+SUPABASE_PUBLISHABLE_KEY=replace-me \
+SUPABASE_SECRET_KEY=replace-me \
+SUPABASE_STORAGE_BUCKET=inventory-photos \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
 MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 MERCADOPAGO_POINT_TERMINAL_ID=replace-me \

@@ -19,14 +19,14 @@ func TestStorageClientCreatesSignedUpload(t *testing.T) {
 		if request.URL.Path != "/storage/v1/object/upload/sign/inventory-photos/bands/band_1/photo.webp" {
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
-		if request.Header.Get("Authorization") != "Bearer service-role-key" {
-			t.Fatalf("expected service role authorization header")
+		if request.Header.Get("Authorization") != "Bearer secret-key" {
+			t.Fatalf("expected secret key authorization header")
 		}
 
 		return jsonResponse(http.StatusOK, `{"url":"/object/upload/sign/inventory-photos/bands/band_1/photo.webp?token=upload-token"}`), nil
 	})}
 
-	client, err := NewStorageClient("https://example.supabase.co", "service-role-key", "inventory-photos", httpClient, slog.Default())
+	client, err := NewStorageClient("https://example.supabase.co", "secret-key", "inventory-photos", httpClient, slog.Default())
 	if err != nil {
 		t.Fatalf("new storage client: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestStorageClientReadsObjectInfo(t *testing.T) {
 		return jsonResponse(http.StatusOK, `{"content_type":"image/webp","size":1024}`), nil
 	})}
 
-	client, err := NewStorageClient("https://example.supabase.co", "service-role-key", "inventory-photos", httpClient, slog.Default())
+	client, err := NewStorageClient("https://example.supabase.co", "secret-key", "inventory-photos", httpClient, slog.Default())
 	if err != nil {
 		t.Fatalf("new storage client: %v", err)
 	}

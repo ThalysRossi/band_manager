@@ -9,17 +9,20 @@ application data in PostgreSQL through `DATABASE_URL`.
 1. Create a Supabase project.
 2. Open **Project Settings > API** and copy:
    - Project URL
-   - anon public key
+   - publishable key
+   - secret key for the API server
 3. Open **Project Settings > Database** and copy the PostgreSQL connection
    string if you want to use Supabase Postgres instead of local Docker
    Postgres.
 
 Do not copy the legacy JWT secret or service role key into this application.
-The frontend and backend use the anon key, while the backend verifies access
-tokens using `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`.
+The frontend and backend use the publishable key, while the backend verifies
+access tokens using `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`.
 Before onboarding or accepting an invite, the backend also checks
 `${SUPABASE_URL}/auth/v1/user` and refuses to persist application records until
 the email is verified.
+The backend also uses a server-only secret key to create Supabase Storage signed
+upload URLs and verify uploaded object metadata.
 
 ## Auth settings
 
@@ -40,14 +43,16 @@ Create `apps/web/.env.local`:
 ```env
 VITE_API_BASE_URL=http://localhost:8080
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
-The `VITE_` variables are browser-exposed. Only use the anon public key there.
+The `VITE_` variables are browser-exposed. Use the publishable key there; do not
+use a secret key there.
 
 ## Local API environment
 
-Run the API with the Supabase project URL and anon key:
+Run the API with the Supabase project URL, publishable key, secret key, and
+storage bucket:
 
 ```bash
 APP_ENV=local \
@@ -56,7 +61,9 @@ API_ALLOWED_ORIGINS=http://localhost:5173 \
 DATABASE_URL=postgres://band_manager:band_manager@localhost:5432/band_manager?sslmode=disable \
 REDIS_URL=redis://localhost:6379/0 \
 SUPABASE_URL=https://your-project.supabase.co \
-SUPABASE_ANON_KEY=your-anon-key \
+SUPABASE_PUBLISHABLE_KEY=your-publishable-key \
+SUPABASE_SECRET_KEY=your-secret-key \
+SUPABASE_STORAGE_BUCKET=inventory-photos \
 MERCADOPAGO_ACCESS_TOKEN=replace-me \
 MERCADOPAGO_WEBHOOK_SECRET=replace-me \
 MERCADOPAGO_POINT_TERMINAL_ID=replace-me \

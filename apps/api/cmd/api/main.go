@@ -47,12 +47,12 @@ func main() {
 		appLogger.Error("supabase authenticator creation failed", "error", err)
 		os.Exit(1)
 	}
-	verifiedUserInspector, err := supabase.NewVerifiedUserInspector(appConfig.SupabaseURL, appConfig.SupabaseAnonKey, supabaseHTTPClient, appLogger)
+	verifiedUserInspector, err := supabase.NewVerifiedUserInspector(appConfig.SupabaseURL, appConfig.SupabasePublishableKey, supabaseHTTPClient, appLogger)
 	if err != nil {
 		appLogger.Error("supabase verified user inspector creation failed", "error", err)
 		os.Exit(1)
 	}
-	photoStorage, err := supabase.NewStorageClient(appConfig.SupabaseURL, appConfig.SupabaseServiceRoleKey, appConfig.SupabaseStorageBucket, supabaseHTTPClient, appLogger)
+	photoStorage, err := supabase.NewStorageClient(appConfig.SupabaseURL, appConfig.SupabaseSecretKey, appConfig.SupabaseStorageBucket, supabaseHTTPClient, appLogger)
 	if err != nil {
 		appLogger.Error("supabase storage client creation failed", "error", err)
 		os.Exit(1)

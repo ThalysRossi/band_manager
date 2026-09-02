@@ -19,10 +19,10 @@ const (
 )
 
 type VerifiedUserInspector struct {
-	userURL    string
-	anonKey    string
-	httpClient *http.Client
-	logger     *slog.Logger
+	userURL        string
+	publishableKey string
+	httpClient     *http.Client
+	logger         *slog.Logger
 }
 
 type userResponse struct {
@@ -31,14 +31,14 @@ type userResponse struct {
 	EmailConfirmedAt *string `json:"email_confirmed_at"`
 }
 
-func NewVerifiedUserInspector(supabaseURL string, anonKey string, httpClient *http.Client, logger *slog.Logger) (VerifiedUserInspector, error) {
+func NewVerifiedUserInspector(supabaseURL string, publishableKey string, httpClient *http.Client, logger *slog.Logger) (VerifiedUserInspector, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(supabaseURL), "/")
 	if baseURL == "" {
 		return VerifiedUserInspector{}, fmt.Errorf("supabase url is required")
 	}
-	trimmedAnonKey := strings.TrimSpace(anonKey)
-	if trimmedAnonKey == "" {
-		return VerifiedUserInspector{}, fmt.Errorf("supabase anon key is required")
+	trimmedPublishableKey := strings.TrimSpace(publishableKey)
+	if trimmedPublishableKey == "" {
+		return VerifiedUserInspector{}, fmt.Errorf("supabase publishable key is required")
 	}
 	if httpClient == nil {
 		return VerifiedUserInspector{}, fmt.Errorf("supabase user inspector http client is required")
@@ -48,10 +48,10 @@ func NewVerifiedUserInspector(supabaseURL string, anonKey string, httpClient *ht
 	}
 
 	return VerifiedUserInspector{
-		userURL:    baseURL + "/auth/v1/user",
-		anonKey:    trimmedAnonKey,
-		httpClient: httpClient,
-		logger:     logger,
+		userURL:        baseURL + "/auth/v1/user",
+		publishableKey: trimmedPublishableKey,
+		httpClient:     httpClient,
+		logger:         logger,
 	}, nil
 }
 
@@ -91,7 +91,7 @@ func (inspector VerifiedUserInspector) inspect(ctx context.Context, bearerToken 
 		return session.VerifiedUser{}, false, fmt.Errorf("create supabase user request url=%q: %w", inspector.userURL, err)
 	}
 	request.Header.Set("Authorization", "Bearer "+bearerToken)
-	request.Header.Set("apikey", inspector.anonKey)
+	request.Header.Set("apikey", inspector.publishableKey)
 
 	response, err := inspector.httpClient.Do(request)
 	if err != nil {

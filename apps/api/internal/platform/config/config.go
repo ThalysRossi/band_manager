@@ -14,8 +14,8 @@ type Config struct {
 	DatabaseURL                string
 	RedisURL                   string
 	SupabaseURL                string
-	SupabaseAnonKey            string
-	SupabaseServiceRoleKey     string
+	SupabasePublishableKey     string
+	SupabaseSecretKey          string
 	SupabaseStorageBucket      string
 	MercadoPagoAccessToken     string
 	MercadoPagoWebhookSecret   string
@@ -53,12 +53,12 @@ func LoadFromEnvironment() (Config, error) {
 		return Config{}, err
 	}
 
-	supabaseAnonKey, err := requiredEnv("SUPABASE_ANON_KEY")
+	supabasePublishableKey, err := requiredEnv("SUPABASE_PUBLISHABLE_KEY")
 	if err != nil {
 		return Config{}, err
 	}
 
-	supabaseServiceRoleKey, err := requiredEnv("SUPABASE_SERVICE_ROLE_KEY")
+	supabaseSecretKey, err := requiredEnv("SUPABASE_SECRET_KEY")
 	if err != nil {
 		return Config{}, err
 	}
@@ -95,8 +95,8 @@ func LoadFromEnvironment() (Config, error) {
 		DatabaseURL:                databaseURL,
 		RedisURL:                   redisURL,
 		SupabaseURL:                supabaseURL,
-		SupabaseAnonKey:            supabaseAnonKey,
-		SupabaseServiceRoleKey:     supabaseServiceRoleKey,
+		SupabasePublishableKey:     supabasePublishableKey,
+		SupabaseSecretKey:          supabaseSecretKey,
 		SupabaseStorageBucket:      supabaseStorageBucket,
 		MercadoPagoAccessToken:     mercadoPagoAccessToken,
 		MercadoPagoWebhookSecret:   mercadoPagoWebhookSecret,

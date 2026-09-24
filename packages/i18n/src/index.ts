@@ -14,6 +14,7 @@ export type TranslationKey =
   | 'auth.passwordResetSubmit'
   | 'auth.passwordLabel'
   | 'auth.passwordUpdateSubmit'
+  | 'auth.passwordUpdateFailed'
   | 'auth.passwordUpdateTitle'
   | 'auth.passwordUpdated'
   | 'auth.signupSubmit'
@@ -25,6 +26,7 @@ export type TranslationKey =
   | 'auth.loginReady'
   | 'auth.logout'
   | 'auth.logoutFailed'
+  | 'auth.recoveryLinkError'
   | 'account.acceptLoading'
   | 'account.acceptLoginPrompt'
   | 'account.acceptMissingToken'
@@ -145,6 +147,27 @@ export type TranslationKey =
   | 'inventory.variantsPlural'
   | 'inventory.variantsHeader'
   | 'inventory.variantsTitle'
+  | 'merchBooth.addToCart'
+  | 'merchBooth.backToBooth'
+  | 'merchBooth.cartEmpty'
+  | 'merchBooth.cartPersistenceError'
+  | 'merchBooth.cartReadOnly'
+  | 'merchBooth.cartReconciled'
+  | 'merchBooth.cartTitle'
+  | 'merchBooth.cashCheckout'
+  | 'merchBooth.cashCheckoutSuccess'
+  | 'merchBooth.checkoutError'
+  | 'merchBooth.decreaseQuantity'
+  | 'merchBooth.empty'
+  | 'merchBooth.error'
+  | 'merchBooth.increaseQuantity'
+  | 'merchBooth.itemCount'
+  | 'merchBooth.loading'
+  | 'merchBooth.openCart'
+  | 'merchBooth.orderSummary'
+  | 'merchBooth.photoAlt'
+  | 'merchBooth.removeFromCart'
+  | 'merchBooth.total'
   | 'nav.inventory'
   | 'nav.merchBooth'
   | 'nav.reports'
@@ -169,6 +192,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.passwordResetSent': 'Check your email for the password reset link.',
     'auth.passwordResetSubmit': 'Send reset link',
     'auth.passwordUpdateSubmit': 'Update password',
+    'auth.passwordUpdateFailed': 'Password update failed. Request a new recovery link and try again.',
     'auth.passwordUpdateTitle': 'Choose a new password',
     'auth.passwordUpdated': 'Password updated.',
     'auth.signupSubmit': 'Create account',
@@ -181,6 +205,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.loginReady': 'Login successful.',
     'auth.logout': 'Log out',
     'auth.logoutFailed': 'Logout failed. Try again.',
+    'auth.recoveryLinkError': 'This recovery link is invalid or expired. Request a new one.',
     'account.acceptLoading': 'Accepting invite...',
     'account.acceptLoginPrompt': 'Log in with the invited email to accept this invite.',
     'account.acceptMissingToken': 'Invite token is missing.',
@@ -303,6 +328,27 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.variantsPlural': 'variants',
     'inventory.variantsHeader': 'Variants',
     'inventory.variantsTitle': 'Variants',
+    'merchBooth.addToCart': 'Add to cart',
+    'merchBooth.backToBooth': 'Back to merch booth',
+    'merchBooth.cartEmpty': 'Your cart is empty.',
+    'merchBooth.cartPersistenceError': 'The cart could not be restored or saved in this browser session.',
+    'merchBooth.cartReadOnly': 'Your role does not allow merch booth checkout.',
+    'merchBooth.cartReconciled': 'The cart was updated to match current stock.',
+    'merchBooth.cartTitle': 'Cart',
+    'merchBooth.cashCheckout': 'Complete cash sale',
+    'merchBooth.cashCheckoutSuccess': 'Cash sale completed.',
+    'merchBooth.checkoutError': 'Cash checkout failed. Review stock and try again.',
+    'merchBooth.decreaseQuantity': 'Decrease quantity for',
+    'merchBooth.empty': 'No inventory variants are available for sale.',
+    'merchBooth.error': 'Merch booth request failed.',
+    'merchBooth.increaseQuantity': 'Increase quantity for',
+    'merchBooth.itemCount': 'Items',
+    'merchBooth.loading': 'Loading merch booth...',
+    'merchBooth.openCart': 'Open cart',
+    'merchBooth.orderSummary': 'Order summary',
+    'merchBooth.photoAlt': 'product photo',
+    'merchBooth.removeFromCart': 'Remove from cart',
+    'merchBooth.total': 'Total',
     'nav.inventory': 'Inventory',
     'nav.merchBooth': 'Merch Booth',
     'nav.reports': 'Reports',
@@ -324,6 +370,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.passwordResetSent': 'Verifique seu email para acessar o link de redefinicao.',
     'auth.passwordResetSubmit': 'Enviar link de redefinicao',
     'auth.passwordUpdateSubmit': 'Atualizar senha',
+    'auth.passwordUpdateFailed':
+      'A atualizacao da senha falhou. Solicite um novo link de recuperacao e tente novamente.',
     'auth.passwordUpdateTitle': 'Escolha uma nova senha',
     'auth.passwordUpdated': 'Senha atualizada.',
     'auth.signupSubmit': 'Criar conta',
@@ -336,6 +384,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.loginReady': 'Login realizado.',
     'auth.logout': 'Sair',
     'auth.logoutFailed': 'Nao foi possivel sair. Tente novamente.',
+    'auth.recoveryLinkError':
+      'Este link de recuperacao e invalido ou expirou. Solicite um novo link.',
     'account.acceptLoading': 'Aceitando convite...',
     'account.acceptLoginPrompt': 'Entre com o email convidado para aceitar este convite.',
     'account.acceptMissingToken': 'O token do convite esta ausente.',
@@ -458,6 +508,27 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.variantsPlural': 'variantes',
     'inventory.variantsHeader': 'Variantes',
     'inventory.variantsTitle': 'Variantes',
+    'merchBooth.addToCart': 'Adicionar ao carrinho',
+    'merchBooth.backToBooth': 'Voltar para a banca',
+    'merchBooth.cartEmpty': 'Seu carrinho esta vazio.',
+    'merchBooth.cartPersistenceError': 'O carrinho nao pode ser restaurado ou salvo nesta sessao do navegador.',
+    'merchBooth.cartReadOnly': 'Seu perfil nao permite concluir vendas na banca.',
+    'merchBooth.cartReconciled': 'O carrinho foi atualizado de acordo com o estoque atual.',
+    'merchBooth.cartTitle': 'Carrinho',
+    'merchBooth.cashCheckout': 'Concluir venda em dinheiro',
+    'merchBooth.cashCheckoutSuccess': 'Venda em dinheiro concluida.',
+    'merchBooth.checkoutError': 'A venda em dinheiro falhou. Confira o estoque e tente novamente.',
+    'merchBooth.decreaseQuantity': 'Diminuir quantidade de',
+    'merchBooth.empty': 'Nenhuma variante esta disponivel para venda.',
+    'merchBooth.error': 'A requisicao da banca falhou.',
+    'merchBooth.increaseQuantity': 'Aumentar quantidade de',
+    'merchBooth.itemCount': 'Itens',
+    'merchBooth.loading': 'Carregando banca...',
+    'merchBooth.openCart': 'Abrir carrinho',
+    'merchBooth.orderSummary': 'Resumo do pedido',
+    'merchBooth.photoAlt': 'foto do produto',
+    'merchBooth.removeFromCart': 'Remover do carrinho',
+    'merchBooth.total': 'Total',
     'nav.inventory': 'Estoque',
     'nav.merchBooth': 'Banca',
     'nav.reports': 'Relatorios',

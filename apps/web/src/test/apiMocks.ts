@@ -12,12 +12,18 @@ import type {
   UpdateInventoryProductRequest,
   UpdateInventoryVariantRequest
 } from '../features/inventory/api'
+import type {
+  BoothItem,
+  CashCheckoutRequest,
+  CashCheckoutResponse
+} from '../features/merch-booth/api'
 
 type MockCurrentAccountRole = Extract<Role, 'owner' | 'viewer'>
 
 type MockAPIState = {
   currentAccountRole: MockCurrentAccountRole
   currentAccountExists: boolean
+  currentAccountRequestCount: number
   inventoryProducts: InventoryProduct[]
   createdProductCount: number
   photoUploadRequestFails: boolean
@@ -29,6 +35,7 @@ const apiBaseURL = 'http://localhost:8080'
 const mockAPIState: MockAPIState = {
   currentAccountRole: 'owner',
   currentAccountExists: true,
+  currentAccountRequestCount: 0,
   inventoryProducts: [],
   createdProductCount: 0,
   photoUploadRequestFails: false,
@@ -37,6 +44,7 @@ const mockAPIState: MockAPIState = {
 
 export const apiHandlers = [
   http.get(`${apiBaseURL}/me`, () => {
+    mockAPIState.currentAccountRequestCount += 1
     if (!mockAPIState.currentAccountExists) {
       return HttpResponse.json(
         {
@@ -68,6 +76,37 @@ export const apiHandlers = [
   }),
   http.get(`${apiBaseURL}/inventory`, () => {
     return HttpResponse.json({ products: mockAPIState.inventoryProducts }, { status: 200 })
+  }),
+  http.get(`${apiBaseURL}/merch-booth/items`, () => {
+    return HttpResponse.json({ items: merchBoothItems(mockAPIState.inventoryProducts) }, { status: 200 })
+  }),
+  http.post(`${apiBaseURL}/merch-booth/checkouts/cash`, async ({ request }) => {
+    const body = (await request.json()) as CashCheckoutRequest
+    const variants = inventoryVariantsByID(mockAPIState.inventoryProducts)
+
+    for (const item of body.items) {
+      const variant = variants.get(item.variantId)
+      if (variant === undefined) {
+        return HttpResponse.json(
+          { code: 'booth_item_not_found', message: 'Booth item not found' },
+          { status: 404 }
+        )
+      }
+      if (item.quantity > variant.quantity) {
+        return HttpResponse.json(
+          { code: 'insufficient_stock', message: 'Insufficient stock' },
+          { status: 409 }
+        )
+      }
+    }
+
+    mockAPIState.inventoryProducts = applyCashCheckout(mockAPIState.inventoryProducts, body)
+
+    const response: CashCheckoutResponse = {
+      id: '66666666-6666-6666-6666-666666666666',
+      status: 'finalized'
+    }
+    return HttpResponse.json(response, { status: 201 })
   }),
   http.post(`${apiBaseURL}/inventory/photos/upload-requests`, () => {
     if (mockAPIState.photoUploadRequestFails) {
@@ -247,6 +286,7 @@ export const apiHandlers = [
 export function resetAPIMocks(): void {
   mockAPIState.currentAccountRole = 'owner'
   mockAPIState.currentAccountExists = true
+  mockAPIState.currentAccountRequestCount = 0
   mockAPIState.inventoryProducts = []
   mockAPIState.createdProductCount = 0
   mockAPIState.photoUploadRequestFails = false
@@ -275,6 +315,10 @@ export function setMockPhotoUploadRequestFails(fails: boolean): void {
 
 export function mockCreatedProductCount(): number {
   return mockAPIState.createdProductCount
+}
+
+export function mockCurrentAccountRequestCount(): number {
+  return mockAPIState.currentAccountRequestCount
 }
 
 function currentAccountResponse(role: MockCurrentAccountRole): CurrentAccountResponse {
@@ -435,4 +479,62 @@ function routeParam(param: string | readonly string[] | undefined): string {
   }
 
   return param
+}
+
+function merchBoothItems(products: InventoryProduct[]): BoothItem[] {
+  return products.flatMap((product) => {
+    return product.variants.map((variant) => ({
+      productId: product.id,
+      variantId: variant.id,
+      productName: product.name,
+      category: product.category,
+      size: variant.size,
+      colour: variant.colour,
+      price: variant.price,
+      cost: variant.cost,
+      quantity: variant.quantity,
+      soldOut: variant.soldOut,
+      photo: product.photo
+    }))
+  })
+}
+
+function inventoryVariantsByID(products: InventoryProduct[]): Map<string, InventoryVariant> {
+  const variants = new Map<string, InventoryVariant>()
+  for (const product of products) {
+    for (const variant of product.variants) {
+      variants.set(variant.id, variant)
+    }
+  }
+
+  return variants
+}
+
+function applyCashCheckout(
+  products: InventoryProduct[],
+  checkout: CashCheckoutRequest
+): InventoryProduct[] {
+  const requestedQuantityByVariantID = new Map<string, number>()
+  for (const item of checkout.items) {
+    requestedQuantityByVariantID.set(item.variantId, item.quantity)
+  }
+
+  return products.map((product) => ({
+    ...product,
+    variants: product.variants.map((variant) => {
+      const requestedQuantity = requestedQuantityByVariantID.get(variant.id)
+      if (requestedQuantity === undefined) {
+        return variant
+      }
+
+      const quantity = variant.quantity - requestedQuantity
+      return {
+        ...variant,
+        quantity,
+        soldOut: quantity === 0,
+        updatedAt: '2026-05-01T13:00:00Z'
+      }
+    }),
+    updatedAt: '2026-05-01T13:00:00Z'
+  }))
 }

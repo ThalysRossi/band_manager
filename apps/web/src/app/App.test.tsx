@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InventoryProduct } from '../features/inventory/api'
 import {
   mockCreatedProductCount,
+  mockCurrentAccountRequestCount,
   setMockCurrentAccountExists,
   setMockCurrentAccountRole,
   setMockInventoryProducts,
@@ -14,11 +15,15 @@ import { App } from './App'
 
 const supabaseMock = vi.hoisted(() => {
   return {
+    createClient: vi.fn(),
+    exchangeCodeForSession: vi.fn(),
     getSession: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
     signInWithPassword: vi.fn(),
     signOut: vi.fn(),
     signUp: vi.fn(),
-    unsubscribe: vi.fn()
+    unsubscribe: vi.fn(),
+    updateUser: vi.fn()
   }
 })
 
@@ -30,12 +35,15 @@ const photoProcessingMock = vi.hoisted(() => {
 
 vi.mock('@supabase/supabase-js', () => {
   return {
-    createClient: () => ({
+    createClient: supabaseMock.createClient.mockImplementation(() => ({
       auth: {
+        exchangeCodeForSession: supabaseMock.exchangeCodeForSession,
         getSession: supabaseMock.getSession,
+        resetPasswordForEmail: supabaseMock.resetPasswordForEmail,
         signInWithPassword: supabaseMock.signInWithPassword,
         signOut: supabaseMock.signOut,
         signUp: supabaseMock.signUp,
+        updateUser: supabaseMock.updateUser,
         onAuthStateChange: () => ({
           data: {
             subscription: {
@@ -44,7 +52,7 @@ vi.mock('@supabase/supabase-js', () => {
           }
         })
       }
-    })
+    }))
   }
 })
 
@@ -53,14 +61,21 @@ vi.mock('../features/inventory/photoProcessing', () => photoProcessingMock)
 describe('App', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/')
+    window.sessionStorage.clear()
+    supabaseMock.createClient.mockClear()
+    supabaseMock.exchangeCodeForSession.mockReset()
     supabaseMock.getSession.mockReset()
+    supabaseMock.resetPasswordForEmail.mockReset()
     supabaseMock.signInWithPassword.mockReset()
     supabaseMock.signOut.mockReset()
     supabaseMock.signUp.mockReset()
     supabaseMock.unsubscribe.mockReset()
+    supabaseMock.updateUser.mockReset()
     photoProcessingMock.processInventoryPhoto.mockReset()
     supabaseMock.getSession.mockResolvedValue({ data: { session: null } })
+    supabaseMock.exchangeCodeForSession.mockResolvedValue({ error: null })
     supabaseMock.signOut.mockResolvedValue({ error: null })
+    supabaseMock.updateUser.mockResolvedValue({ error: null })
     Object.defineProperty(URL, 'createObjectURL', {
       value: vi.fn(() => 'blob:inventory-preview'),
       configurable: true
@@ -109,17 +124,194 @@ describe('App', () => {
     })
   })
 
+  it('exchanges a recovery callback without requesting the application account', async () => {
+    supabaseMock.getSession
+      .mockResolvedValueOnce({ data: { session: null } })
+      .mockResolvedValue(authenticatedSession())
+    window.history.pushState({}, '', '/auth/callback?code=recovery-code&next=/password-update')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
+    expect(supabaseMock.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code')
+    expect(mockCurrentAccountRequestCount()).toBe(0)
+  })
+
+  it('shows a recovery-specific message when callback exchange fails', async () => {
+    supabaseMock.exchangeCodeForSession.mockResolvedValue({
+      error: { message: 'recovery link expired' }
+    })
+    window.history.pushState({}, '', '/auth/callback?code=expired-code&next=/password-update')
+
+    render(<App />)
+
+    expect(
+      await screen.findByText('This recovery link is invalid or expired. Request a new one.')
+    ).toBeInTheDocument()
+  })
+
+  it('returns to inventory after updating the password', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    window.history.pushState({}, '', '/password-update')
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Password'), { target: { value: 'password-2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
+
+    expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
+    expect(supabaseMock.updateUser).toHaveBeenCalledWith({ password: 'password-2' })
+  })
+
+  it('shows a password-update-specific message when the recovery session is invalid', async () => {
+    supabaseMock.updateUser.mockResolvedValue({
+      error: { message: 'recovery session expired' }
+    })
+    window.history.pushState({}, '', '/password-update')
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Password'), { target: { value: 'password-2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update password' }))
+
+    expect(
+      await screen.findByText('Password update failed. Request a new recovery link and try again.')
+    ).toBeInTheDocument()
+  })
+
   it('renders protected workspace routes for authenticated users', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
     window.history.pushState({}, '', '/merch-booth')
 
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
-    expect(screen.getAllByText('Merch Booth')).toHaveLength(3)
-    expect(screen.getByText('Backend foundation is ready')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Cart' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open cart: 0' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to cart Logo Shirt M / Black' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Complete cash sale' })).not.toBeInTheDocument()
     expect(await screen.findByText('Os Testes')).toBeInTheDocument()
     expect(screen.getByText('owner@example.com | Owner')).toBeInTheDocument()
+  })
+
+  it('prevents sold-out variants from being added to the booth cart', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProductWithSoldOutVariant()])
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    expect(await screen.findByText('Sold out')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Add to cart Logo Shirt G / Black' })
+    ).toBeDisabled()
+  })
+
+  it('limits cart quantity to stock and completes a cash sale', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    expect(screen.getByRole('link', { name: 'Open cart: 1' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'Open cart: 1' }))
+
+    expect(await screen.findByRole('heading', { name: 'Cart' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' }))
+
+    expect(
+      screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' })
+    ).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Complete cash sale' }))
+
+    expect(await screen.findByText('Cash sale completed.')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/merch-booth')
+    expect(await screen.findByText('Sold out')).toBeInTheDocument()
+  })
+
+  it('restores the booth cart after a page refresh in the same tab', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+    window.history.pushState({}, '', '/merch-booth')
+
+    const firstRender = render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    expect(screen.getByRole('link', { name: 'Open cart: 1' })).toBeInTheDocument()
+    firstRender.unmount()
+    window.history.pushState({}, '', '/merch-booth/cart')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Cart' })).toBeInTheDocument()
+    expect(screen.getByText('Logo Shirt')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Complete cash sale' })).toBeEnabled()
+  })
+
+  it('reconciles restored cart quantities against current stock', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    const product = mockInventoryProduct()
+    setMockInventoryProducts([product])
+    window.history.pushState({}, '', '/merch-booth')
+
+    const firstRender = render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    expect(screen.getByRole('link', { name: 'Open cart: 2' })).toBeInTheDocument()
+    firstRender.unmount()
+    setMockInventoryProducts([
+      {
+        ...product,
+        variants: product.variants.map((variant) => ({ ...variant, quantity: 1 }))
+      }
+    ])
+    window.history.pushState({}, '', '/merch-booth/cart')
+
+    render(<App />)
+
+    expect(
+      await screen.findByText('The cart was updated to match current stock.')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' })
+    ).toBeDisabled()
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(window.sessionStorage.key(0) ?? '')).toContain(
+        '"quantity":1'
+      )
+    })
+  })
+
+  it('keeps the booth read-only for viewers', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockCurrentAccountRole('viewer')
+    setMockInventoryProducts([mockInventoryProduct()])
+    window.history.pushState({}, '', '/merch-booth')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to cart Logo Shirt M / Black' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Open cart/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Complete cash sale' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the cart route read-only for viewers', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockCurrentAccountRole('viewer')
+    setMockInventoryProducts([mockInventoryProduct()])
+    window.history.pushState({}, '', '/merch-booth/cart')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Cart' })).toBeInTheDocument()
+    expect(screen.getByText('Your role does not allow merch booth checkout.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Complete cash sale' })).not.toBeInTheDocument()
   })
 
   it('redirects authenticated users without an account to onboarding', async () => {
@@ -388,12 +580,17 @@ describe('App', () => {
     ).toBeDisabled()
   })
 
-  it('logs out from the header account dropdown', async () => {
+  it('logs out from the header account dropdown and clears the cart', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
     window.history.pushState({}, '', '/merch-booth')
 
     render(<App />)
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    await waitFor(() => {
+      expect(window.sessionStorage.length).toBe(1)
+    })
     fireEvent.keyDown(await screen.findByRole('button', { name: /Os Testes/i }), {
       key: 'Enter',
       code: 'Enter'
@@ -403,6 +600,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(supabaseMock.signOut).toHaveBeenCalledTimes(1)
     })
+    expect(window.sessionStorage.length).toBe(0)
     expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument()
   })
 
@@ -561,6 +759,28 @@ function mockInventoryProductWithTwoVariants(): InventoryProduct {
         cost: { amount: 2000, currency: 'BRL' },
         quantity: 2,
         soldOut: false,
+        createdAt: '2026-05-01T12:00:00Z',
+        updatedAt: '2026-05-01T12:00:00Z'
+      }
+    ]
+  }
+}
+
+function mockInventoryProductWithSoldOutVariant(): InventoryProduct {
+  const product = mockInventoryProduct()
+  return {
+    ...product,
+    variants: [
+      ...product.variants,
+      {
+        id: '44444444-4444-4444-4444-444444444445',
+        productId: product.id,
+        size: 'g',
+        colour: 'Black',
+        price: { amount: 5000, currency: 'BRL' },
+        cost: { amount: 2000, currency: 'BRL' },
+        quantity: 0,
+        soldOut: true,
         createdAt: '2026-05-01T12:00:00Z',
         updatedAt: '2026-05-01T12:00:00Z'
       }

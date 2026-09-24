@@ -36,6 +36,10 @@ import {
 import { finishAuthCallback, getCurrentAccount } from '../features/auth/api'
 import type { CurrentAccountResponse } from '../features/auth/api'
 import { InventoryPage as InventoryFeaturePage } from '../features/inventory/InventoryPage'
+import { MerchBoothCartPage as MerchBoothCartFeaturePage } from '../features/merch-booth/MerchBoothCartPage'
+import { MerchBoothLayout as MerchBoothFeatureLayout } from '../features/merch-booth/MerchBoothLayout'
+import { MerchBoothPage as MerchBoothFeaturePage } from '../features/merch-booth/MerchBoothPage'
+import { clearStoredMerchBoothCart } from '../features/merch-booth/cart'
 import { ApiError } from '../shared/api/client'
 import { AuthSessionProvider, useAuthSession } from '../shared/auth/session'
 import { detectLocale } from '../shared/i18n/detectLocale'
@@ -53,7 +57,7 @@ type NavigationLabelKey =
   | 'nav.calendar'
   | 'nav.account'
 
-type ProtectedRoutePath = NavigationItem['href']
+type ProtectedRoutePath = NavigationItem['href'] | '/merch-booth/cart'
 
 type HeaderLabelKey =
   | NavigationLabelKey
@@ -83,7 +87,19 @@ const inventoryRoute = createRoute({
 const merchBoothRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/merch-booth',
+  component: MerchBoothRouteLayout
+})
+
+const merchBoothIndexRoute = createRoute({
+  getParentRoute: () => merchBoothRoute,
+  path: '/',
   component: MerchBoothPage
+})
+
+const merchBoothCartRoute = createRoute({
+  getParentRoute: () => merchBoothRoute,
+  path: '/cart',
+  component: MerchBoothCartPage
 })
 
 const financialReportsRoute = createRoute({
@@ -162,7 +178,7 @@ const passwordUpdateRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   inventoryRoute,
-  merchBoothRoute,
+  merchBoothRoute.addChildren([merchBoothIndexRoute, merchBoothCartRoute]),
   financialReportsRoute,
   calendarRoute,
   accountRoute,
@@ -200,49 +216,44 @@ function RootLayout() {
   const translate = createTranslator(locale)
   const location = useLocation()
   const headerLabelKey = headerLabelForPath(location.pathname)
+  const isPublicAuthRoute = publicAuthRoute(location.pathname)
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#151813_0%,var(--color-black-100)_32%,var(--color-black-100)_100%)] pb-[72px] min-[800px]:grid min-[800px]:grid-cols-[240px_minmax(0,1fr)] min-[800px]:pb-0">
-      <header className="flex min-h-16 items-center justify-between gap-ui-16 border-b border-border bg-[rgba(17,19,15,0.92)] p-ui-16 backdrop-blur-md min-[800px]:col-span-full min-[800px]:px-ui-32 min-[800px]:py-[18px]">
+    <main
+      className={
+        isPublicAuthRoute
+          ? 'min-h-screen bg-[linear-gradient(180deg,var(--color-black-200)_0%,var(--color-black-100)_32%,var(--color-black-100)_100%)]'
+          : 'min-h-screen bg-[linear-gradient(180deg,var(--color-black-200)_0%,var(--color-black-100)_32%,var(--color-black-100)_100%)] pb-[72px] min-[800px]:grid min-[800px]:grid-cols-[240px_minmax(0,1fr)] min-[800px]:pb-0'
+      }
+    >
+      <header
+        className={
+          isPublicAuthRoute
+            ? 'flex min-h-16 items-center border-b border-border bg-black-200/95 px-ui-16 py-[18px] backdrop-blur-md'
+            : 'flex min-h-16 items-center justify-between gap-ui-16 border-b border-border bg-black-200/95 p-ui-16 backdrop-blur-md min-[800px]:col-span-full min-[800px]:px-ui-32 min-[800px]:py-[18px]'
+        }
+      >
         <div className="grid min-w-0 gap-ui-2">
           <h1 className="m-0 text-lg font-bold">{translate('app.title')}</h1>
           <p className="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-[650] text-white-300">
             {translate(headerLabelKey)}
           </p>
         </div>
-        <HeaderAccountSummary translate={translate} />
+        {isPublicAuthRoute ? null : <HeaderAccountSummary translate={translate} />}
       </header>
 
       <section
-        className="mx-auto w-[min(100%,960px)] px-ui-16 py-ui-32 min-[800px]:col-start-2 min-[800px]:row-start-2 min-[800px]:p-ui-32"
+        className={
+          isPublicAuthRoute
+            ? 'mx-auto w-[min(100%,420px)] px-ui-16 py-ui-32'
+            : 'mx-auto w-[min(100%,960px)] px-ui-16 py-ui-32 min-[800px]:col-start-2 min-[800px]:row-start-2 min-[800px]:p-ui-32'
+        }
         aria-label={translate('app.title')}
       >
         <Outlet />
       </section>
 
-      <nav
-        className="fixed inset-x-0 bottom-0 grid min-h-16 grid-cols-5 border-t border-border bg-[rgba(20,23,18,0.96)] backdrop-blur-md min-[800px]:sticky min-[800px]:top-[65px] min-[800px]:col-start-1 min-[800px]:row-start-2 min-[800px]:flex min-[800px]:min-h-[calc(100vh-65px)] min-[800px]:flex-col min-[800px]:border-r min-[800px]:border-t-0 min-[800px]:p-ui-12"
-        aria-label={translate('app.title')}
-      >
-        {navigationItems.map((item) => {
-          const Icon = item.icon
-
-          return (
-            <Link
-              key={item.key}
-              to={item.href}
-              activeOptions={{ exact: item.href === '/' }}
-              className="grid min-h-16 min-w-0 content-center place-items-center gap-ui-4 text-xs font-[650] text-white-200 min-[800px]:min-h-11 min-[800px]:grid-cols-[24px_minmax(0,1fr)] min-[800px]:justify-start min-[800px]:rounded-md min-[800px]:px-ui-12 min-[800px]:[place-items:center_start]"
-              activeProps={{ className: 'bg-[#203b2f] text-white-100' }}
-            >
-              <Icon aria-hidden="true" size={20} strokeWidth={2} />
-              <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-ui-4">
-                {translate(item.key)}
-              </span>
-            </Link>
-          )
-        })}
-      </nav>
+      {isPublicAuthRoute ? null : <WorkspaceNavigation translate={translate} />}
     </main>
   )
 }
@@ -260,12 +271,27 @@ function InventoryPage() {
   )
 }
 
-function MerchBoothPage() {
+function MerchBoothRouteLayout() {
+  const session = useAuthSession()
+  const translate = useTranslate()
+
   return (
     <ProtectedRoute redirect="/merch-booth">
-      <WorkspaceHeader titleKey="nav.merchBooth" />
+      {session.state.status === 'authenticated' ? (
+        <MerchBoothFeatureLayout accessToken={session.state.accessToken} translate={translate}>
+          <Outlet />
+        </MerchBoothFeatureLayout>
+      ) : null}
     </ProtectedRoute>
   )
+}
+
+function MerchBoothPage() {
+  return <MerchBoothFeaturePage />
+}
+
+function MerchBoothCartPage() {
+  return <MerchBoothCartFeaturePage />
 }
 
 function FinancialReportsPage() {
@@ -363,7 +389,7 @@ function AuthCallbackRoutePage() {
   }, [navigate, search.code, search.next, session.refresh])
 
   if (failed) {
-    return <p role="status">{translate('auth.genericError')}</p>
+    return <p role="status">{translate('auth.recoveryLinkError')}</p>
   }
 
   return <p>{translate('account.loading')}</p>
@@ -374,7 +400,47 @@ function PasswordResetRoutePage() {
 }
 
 function PasswordUpdateRoutePage() {
-  return <PasswordUpdatePage translate={useTranslate()} />
+  const translate = useTranslate()
+  const navigate = useNavigate()
+  const session = useAuthSession()
+
+  return (
+    <PasswordUpdatePage
+      translate={translate}
+      onSuccess={async () => {
+        await session.refresh()
+        await navigate({ to: '/' })
+      }}
+    />
+  )
+}
+
+function WorkspaceNavigation(props: { translate: (key: TranslationKey) => string }) {
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 grid min-h-16 grid-cols-5 border-t border-border bg-black-200/95 backdrop-blur-md min-[800px]:sticky min-[800px]:top-[65px] min-[800px]:col-start-1 min-[800px]:row-start-2 min-[800px]:flex min-[800px]:min-h-[calc(100vh-65px)] min-[800px]:flex-col min-[800px]:border-r min-[800px]:border-t-0 min-[800px]:p-ui-12"
+      aria-label={props.translate('app.title')}
+    >
+      {navigationItems.map((item) => {
+        const Icon = item.icon
+
+        return (
+          <Link
+            key={item.key}
+            to={item.href}
+            activeOptions={{ exact: item.href === '/' }}
+            className="grid min-h-16 min-w-0 content-center place-items-center gap-ui-4 text-xs font-[650] text-white-200 min-[800px]:min-h-11 min-[800px]:grid-cols-[24px_minmax(0,1fr)] min-[800px]:justify-start min-[800px]:rounded-md min-[800px]:px-ui-12 min-[800px]:[place-items:center_start]"
+            activeProps={{ className: 'bg-white-200 text-black-100' }}
+          >
+            <Icon aria-hidden="true" size={20} strokeWidth={2} />
+            <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-ui-4">
+              {props.translate(item.key)}
+            </span>
+          </Link>
+        )
+      })}
+    </nav>
+  )
 }
 
 function WorkspaceHeader(props: { titleKey: NavigationLabelKey }) {
@@ -446,6 +512,10 @@ function BandContext(props: {
     setLogoutPending(true)
     setLogoutError('')
     try {
+      clearStoredMerchBoothCart({
+        userId: props.account.user.id,
+        bandId: props.account.activeBand.bandId
+      })
       await session.logout()
       queryClient.removeQueries({ queryKey: ['account'] })
     } catch {
@@ -462,7 +532,7 @@ function BandContext(props: {
             type="button"
             className="grid min-w-0 grid-cols-[36px_minmax(0,1fr)] items-center gap-ui-10 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <Avatar className="size-9 border border-green-100/45 bg-[#163a2a] text-[#dff7ea]">
+            <Avatar className="size-9 border border-white-300/45 bg-black-400 text-white-100">
               <AvatarFallback className="bg-transparent text-[0.8125rem] font-extrabold text-inherit">
                 {bandInitials(props.account.activeBand.bandName)}
               </AvatarFallback>
@@ -593,12 +663,26 @@ function parseProtectedRoutePath(value: unknown): ProtectedRoutePath {
     return '/'
   }
 
+  if (value === '/merch-booth/cart') {
+    return value
+  }
+
   const matchingItem = navigationItems.find((item) => item.href === value)
   if (matchingItem === undefined) {
     return '/'
   }
 
   return matchingItem.href
+}
+
+function publicAuthRoute(pathname: string): boolean {
+  return (
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname === '/password-reset' ||
+    pathname === '/password-update' ||
+    pathname === '/auth/callback'
+  )
 }
 
 function headerLabelForPath(pathname: string): HeaderLabelKey {

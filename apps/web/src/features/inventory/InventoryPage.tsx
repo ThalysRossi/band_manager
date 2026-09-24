@@ -1041,7 +1041,7 @@ function PhotoStatus(props: { photoState: PhotoFormState; translate: Translate }
   }
 
   return (
-    <p className="m-0 text-sm text-green-100" role="status">
+    <p className="m-0 text-sm text-white-200" role="status">
       {props.translate('inventory.photoReady')} {props.photoState.fileName}
     </p>
   )

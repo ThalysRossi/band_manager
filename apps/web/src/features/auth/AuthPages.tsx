@@ -14,6 +14,11 @@ type AuthPageProps = {
   onLoginSuccess?: () => void
 }
 
+type PasswordUpdatePageProps = {
+  translate: Translate
+  onSuccess: () => Promise<void>
+}
+
 export function LoginPage(props: AuthPageProps) {
   const [status, setStatus] = useState<string>('')
 
@@ -192,7 +197,7 @@ export function PasswordResetPage(props: AuthPageProps) {
   )
 }
 
-export function PasswordUpdatePage(props: AuthPageProps) {
+export function PasswordUpdatePage(props: PasswordUpdatePageProps) {
   const [status, setStatus] = useState<string>('')
 
   return (
@@ -207,8 +212,8 @@ export function PasswordUpdatePage(props: AuthPageProps) {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
             setNewPassword(fieldValue(values, 'password'))
-              .then(() => setStatus(props.translate('auth.passwordUpdated')))
-              .catch(() => setStatus(props.translate('auth.genericError')))
+              .then(props.onSuccess)
+              .catch(() => setStatus(props.translate('auth.passwordUpdateFailed')))
           }}
         >
           <div className="grid gap-ui-8">

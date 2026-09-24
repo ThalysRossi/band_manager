@@ -1,4 +1,4 @@
-import { createSupabaseClient } from './supabase'
+import { getSupabaseClient } from './supabase'
 
 export type AuthSession = {
   accessToken: string
@@ -10,7 +10,7 @@ export type AuthSubscription = {
 }
 
 export async function signupWithPassword(email: string, password: string): Promise<void> {
-  const result = await createSupabaseClient().auth.signUp({
+  const result = await getSupabaseClient().auth.signUp({
     email,
     password,
     options: {
@@ -21,7 +21,7 @@ export async function signupWithPassword(email: string, password: string): Promi
 }
 
 export async function loginWithPassword(email: string, password: string): Promise<AuthSession> {
-  const result = await createSupabaseClient().auth.signInWithPassword({ email, password })
+  const result = await getSupabaseClient().auth.signInWithPassword({ email, password })
   throwIfAuthError(result.error)
   if (result.data.session === null) {
     throw new Error('Authenticated session is required')
@@ -31,21 +31,21 @@ export async function loginWithPassword(email: string, password: string): Promis
 }
 
 export async function getAuthSession(): Promise<AuthSession | null> {
-  const result = await createSupabaseClient().auth.getSession()
+  const result = await getSupabaseClient().auth.getSession()
   throwIfAuthError(result.error)
 
   return result.data.session === null ? null : toAuthSession(result.data.session)
 }
 
 export async function logout(): Promise<void> {
-  const result = await createSupabaseClient().auth.signOut()
+  const result = await getSupabaseClient().auth.signOut()
   throwIfAuthError(result.error)
 }
 
 export function subscribeToAuthSession(
   listener: (session: AuthSession | null) => void
 ): AuthSubscription {
-  const result = createSupabaseClient().auth.onAuthStateChange((_event, session) => {
+  const result = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
     listener(session === null ? null : toAuthSession(session))
   })
 
@@ -55,19 +55,19 @@ export function subscribeToAuthSession(
 }
 
 export async function completeAuthCallback(code: string): Promise<void> {
-  const result = await createSupabaseClient().auth.exchangeCodeForSession(code)
+  const result = await getSupabaseClient().auth.exchangeCodeForSession(code)
   throwIfAuthError(result.error)
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
-  const result = await createSupabaseClient().auth.resetPasswordForEmail(email, {
+  const result = await getSupabaseClient().auth.resetPasswordForEmail(email, {
     redirectTo: `${window.location.origin}/auth/callback?next=/password-update`
   })
   throwIfAuthError(result.error)
 }
 
 export async function updatePassword(password: string): Promise<void> {
-  const result = await createSupabaseClient().auth.updateUser({ password })
+  const result = await getSupabaseClient().auth.updateUser({ password })
   throwIfAuthError(result.error)
 }
 

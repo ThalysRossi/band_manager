@@ -74,6 +74,14 @@ For Supabase Postgres, replace `DATABASE_URL` with the Supabase database
 connection string and apply the SQL migrations in `apps/api/migrations` in
 numeric order before using the app.
 
+## Password recovery
+
+Password recovery uses the Supabase callback at
+`http://localhost:5173/auth/callback` and does not require the Go API until the
+user is redirected into the authenticated workspace. If browser requests to
+`http://localhost:8080/me` report status `null`, start the API and verify it is
+listening; this is an unreachable local API, not a Supabase or CORS rejection.
+
 ## Smoke test
 
 1. Start local dependencies and the API.

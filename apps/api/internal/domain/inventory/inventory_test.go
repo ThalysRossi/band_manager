@@ -42,16 +42,29 @@ func TestNormalizeProductIdentity(t *testing.T) {
 	}
 }
 
-func TestVariantIdentityNormalizesEmptyColour(t *testing.T) {
+func TestVariantIdentityRejectsEmptyColour(t *testing.T) {
 	t.Parallel()
 
-	identity, err := VariantIdentityFor(SizeM, " ")
-	if err != nil {
-		t.Fatalf("variant identity: %v", err)
+	_, err := VariantIdentityFor(SizeM, " ")
+	if err == nil {
+		t.Fatal("expected missing colour validation error")
 	}
+}
 
-	if identity.NormalizedColour != "not_applicable" {
-		t.Fatalf("expected not_applicable colour identity, got %q", identity.NormalizedColour)
+func TestValidateCategorySizeUsesStockSizesOnlyForClothing(t *testing.T) {
+	t.Parallel()
+
+	if err := ValidateCategorySize(CategoryShirt, SizeP); err != nil {
+		t.Fatalf("shirt P should be valid: %v", err)
+	}
+	if err := ValidateCategorySize(CategoryHoodie, SizeNotApplicable); err == nil {
+		t.Fatal("hoodie must reject not_applicable")
+	}
+	if err := ValidateCategorySize(CategoryVinyl, SizeNotApplicable); err != nil {
+		t.Fatalf("vinyl implicit stock size should be valid: %v", err)
+	}
+	if err := ValidateCategorySize(CategoryVinyl, SizeM); err == nil {
+		t.Fatal("vinyl must reject clothing size")
 	}
 }
 

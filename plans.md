@@ -314,6 +314,7 @@ Core tables:
 - users
 - band_memberships
 - merch_products
+- merch_colour_variants
 - merch_variants
 - inventory_movements
 - carts
@@ -337,8 +338,18 @@ band_id + category + normalized_name
 Variant uniqueness:
 
 ```txt
-product_id + size + colour
+product_id + normalized_colour
 ```
+
+`merch_colour_variants` owns the colour, photo, price, and cost. `merch_variants` is
+the size-specific stock row retained as the checkout/reservation/sale reference.
+Its active uniqueness is `colour_variant_id + size`.
+
+Migration `000011_inventory_colour_variants.sql` requires empty inventory and sales.
+For local development only, run `apps/api/scripts/reset_local_merch.sql` against the
+local PostgreSQL database before applying that migration. The reset refuses pending
+provider payments, preserves users/bands/memberships/invites/calendar, and does not
+delete old Supabase Storage objects.
 
 Use soft deletes:
 
@@ -367,18 +378,18 @@ The owner can:
 - see total quantity per variant
 - see price, cost, and expected profit
 
-Each merch variant includes:
+Each colour variant includes:
 
 - UUID
 - product name
 - category
-- size when applicable
-- colour when applicable
+- colour
 - price amount
 - cost amount
 - currency
 - photo
-- quantity
+- one or more size stock rows with quantity; shirts and hoodies may have PP through XGG,
+  and other categories have one implicit `not_applicable` row
 
 ### Business rules
 
@@ -390,7 +401,12 @@ Each merch variant includes:
 - Product category is fixed enum in alpha.
 - Size is fixed enum in alpha.
 - Category + normalized name must be unique per band at product level.
-- Size and colour identify product variants.
+- Category, product name, and colour identify a colour variant; size is a stock
+  characteristic, not a separate colour variant.
+- Each colour has its own required full/display photo and shared price/cost.
+- A non-empty colour name is required for every colour variant.
+- Duplicate colour under one product and duplicate size under one colour are rejected.
+- Product category changes between sized and non-sized categories are rejected.
 - Inventory changes create inventory movement records.
 - Sold-out items remain visible.
 
@@ -398,9 +414,11 @@ Each merch variant includes:
 
 - Owner can create a Shirt product with multiple sizes.
 - Duplicate product name/category is rejected.
-- Duplicate variant size/colour is rejected.
+- Duplicate colour and duplicate size within a colour are rejected.
 - Invalid negative values are rejected by frontend and backend.
 - Sold-out item is visible in inventory.
+- The merch booth shows one card per colour, requires size selection for shirts and
+  hoodies, and keeps sold-out sizes visible but disabled.
 - Audit log is written for create/update/delete.
 - Unit tests cover pure domain rules where they add signal.
 - Integration tests cover DB constraints.

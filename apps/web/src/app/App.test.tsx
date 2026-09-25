@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { InventoryProduct } from '../features/inventory/api'
+import type { InventoryPhoto, InventoryProduct } from '../features/inventory/api'
 import {
   mockCreatedProductCount,
   mockCurrentAccountRequestCount,
@@ -132,7 +132,9 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Choose a new password' })
+    ).toBeInTheDocument()
     expect(supabaseMock.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code')
     expect(mockCurrentAccountRequestCount()).toBe(0)
   })
@@ -189,7 +191,10 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Cart' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open cart: 0' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add to cart Logo Shirt M / Black' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to cart Logo Shirt Black' })).toBeDisabled()
+    expect(
+      screen.getByRole('combobox', { name: 'Select size Logo Shirt Black' })
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Complete cash sale' })).not.toBeInTheDocument()
     expect(await screen.findByText('Os Testes')).toBeInTheDocument()
     expect(screen.getByText('owner@example.com | Owner')).toBeInTheDocument()
@@ -202,10 +207,8 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findByText('Sold out')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Add to cart Logo Shirt G / Black' })
-    ).toBeDisabled()
+    expect(await screen.findByRole('option', { name: 'G — Sold out' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add to cart Logo Shirt Black' })).toBeDisabled()
   })
 
   it('limits cart quantity to stock and completes a cash sale', async () => {
@@ -215,12 +218,14 @@ describe('App', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    await addMShirtToCart()
     expect(screen.getByRole('link', { name: 'Open cart: 1' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Open cart: 1' }))
 
     expect(await screen.findByRole('heading', { name: 'Cart' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' })
+    )
 
     expect(
       screen.getByRole('button', { name: 'Increase quantity for Logo Shirt M / Black' })
@@ -240,7 +245,7 @@ describe('App', () => {
 
     const firstRender = render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    await addMShirtToCart()
     expect(screen.getByRole('link', { name: 'Open cart: 1' })).toBeInTheDocument()
     firstRender.unmount()
     window.history.pushState({}, '', '/merch-booth/cart')
@@ -260,8 +265,8 @@ describe('App', () => {
 
     const firstRender = render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    await addMShirtToCart()
+    fireEvent.click(screen.getByRole('button', { name: 'Add to cart Logo Shirt Black' }))
     expect(screen.getByRole('link', { name: 'Open cart: 2' })).toBeInTheDocument()
     firstRender.unmount()
     setMockInventoryProducts([
@@ -296,7 +301,9 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Merch Booth' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Add to cart Logo Shirt M / Black' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Add to cart Logo Shirt M / Black' })
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Open cart/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Complete cash sale' })).not.toBeInTheDocument()
   })
@@ -388,6 +395,30 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
     expect(await screen.findByText('No inventory products yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create product' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add product' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+  })
+
+  it('collapses product creation when inventory has products and preserves a draft when toggled', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockInventoryProduct()])
+    window.history.pushState({}, '', '/')
+
+    render(<App />)
+
+    const toggle = await screen.findByRole('button', { name: 'Add product' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByLabelText('Product name')).not.toBeVisible()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Product name')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Product name'), { target: { value: 'Draft shirt' } })
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(screen.getByLabelText('Product name')).toHaveValue('Draft shirt')
   })
 
   it('renders inventory products', async () => {
@@ -401,6 +432,38 @@ describe('App', () => {
     expect(screen.getByText('In stock')).toBeInTheDocument()
   })
 
+  it('shows one colour variant with nested sizes and one booth card per colour', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    setMockInventoryProducts([mockDeadBirdProduct()])
+
+    render(<App />)
+
+    expect(await screen.findByText('Dead Bird')).toBeInTheDocument()
+    expect(screen.getByText('2 variants')).toBeInTheDocument()
+    expect(screen.getByAltText('Dead Bird Black')).toHaveAttribute(
+      'src',
+      'https://storage.example/display-public.webp'
+    )
+    expect(screen.getByAltText('Dead Bird Orange')).toHaveAttribute(
+      'src',
+      'https://storage.example/orange-display.webp'
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: 'Merch Booth' }))
+    expect(
+      await screen.findByRole('combobox', { name: 'Select size Dead Bird Black' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', { name: 'Select size Dead Bird Orange' })
+    ).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Add to cart Dead Bird/ })).toHaveLength(2)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Select size Dead Bird Orange' }), {
+      target: { value: '44444444-4444-4444-4444-444444444447' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add to cart Dead Bird Orange' }))
+    expect(screen.getByRole('link', { name: 'Open cart: 1' })).toBeInTheDocument()
+  })
+
   it('hides inventory create controls for a viewer', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
     setMockCurrentAccountRole('viewer')
@@ -410,6 +473,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Inventory' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create product' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add product' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit product/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Delete product/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Add variant/i })).not.toBeInTheDocument()
@@ -437,9 +501,40 @@ describe('App', () => {
     expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
 
-    expect(await screen.findByText('Product created.')).toBeInTheDocument()
+    expect(await screen.findByText('Product created.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Add product' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
     expect(await screen.findByText('Logo Shirt')).toBeInTheDocument()
     expect(mockCreatedProductCount()).toBe(1)
+  })
+
+  it('creates a non-clothing colour with one implicit stock row', async () => {
+    supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    photoProcessingMock.processInventoryPhoto.mockResolvedValue(processedInventoryPhoto())
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Product name'), {
+      target: { value: 'Dead Bird Vinyl' }
+    })
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'vinyl' } })
+    expect(screen.queryByLabelText('Size')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Colour'), { target: { value: 'Black' } })
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Photo'), {
+      target: { files: [new File(['photo'], 'vinyl.jpg', { type: 'image/jpeg' })] }
+    })
+    expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
+    expect(await screen.findByText('Product created.')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Merch Booth' }))
+    expect(
+      await screen.findByRole('button', { name: 'Add to cart Dead Bird Vinyl Black' })
+    ).toBeEnabled()
+    expect(screen.queryByRole('combobox', { name: /Select size/ })).not.toBeInTheDocument()
   })
 
   it('does not create an inventory product when photo upload fails', async () => {
@@ -455,6 +550,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Photo'), {
       target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] }
     })
+    fireEvent.change(screen.getByLabelText('Colour'), { target: { value: 'Black' } })
 
     expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
@@ -476,12 +572,15 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Photo'), {
       target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] }
     })
+    fireEvent.change(screen.getByLabelText('Colour'), { target: { value: 'Black' } })
 
     expect(await screen.findByText(/Photo ready/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create product' }))
 
     expect(
-      await screen.findByText('Photo upload request failed. Restart the API and check VITE_API_BASE_URL.')
+      await screen.findByText(
+        'Photo upload request failed. Restart the API and check VITE_API_BASE_URL.'
+      )
     ).toBeInTheDocument()
     expect(mockCreatedProductCount()).toBe(0)
   })
@@ -525,7 +624,9 @@ describe('App', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit variant Logo Shirt M / Black' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Edit variant Logo Shirt M / Black' })
+    )
     fireEvent.change(screen.getByLabelText('Edit variant colour'), {
       target: { value: 'Red' }
     })
@@ -533,12 +634,13 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save variant' }))
 
     expect(await screen.findByText('Variant updated.')).toBeInTheDocument()
-    expect(await screen.findByText('M / Red')).toBeInTheDocument()
+    expect(await screen.findByText('Red')).toBeInTheDocument()
     expect(await screen.findByText('4 in stock')).toBeInTheDocument()
   })
 
   it('creates an inventory variant for an existing product', async () => {
     supabaseMock.getSession.mockResolvedValue(authenticatedSession())
+    photoProcessingMock.processInventoryPhoto.mockResolvedValue(processedInventoryPhoto())
     setMockInventoryProducts([mockInventoryProduct()])
 
     render(<App />)
@@ -549,11 +651,17 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('New variant price (BRL)'), { target: { value: '60' } })
     fireEvent.change(screen.getByLabelText('New variant cost (BRL)'), { target: { value: '25' } })
     fireEvent.change(screen.getByLabelText('New variant quantity'), { target: { value: '3' } })
+    fireEvent.change(
+      screen.getByLabelText('Photo', { selector: 'input[id^="inventory-create-variant-photo"]' }),
+      {
+        target: { files: [new File(['photo'], 'red.jpg', { type: 'image/jpeg' })] }
+      }
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Create variant' }))
 
     expect(await screen.findByText('Variant created.')).toBeInTheDocument()
     expect(await screen.findByText('2 variants')).toBeInTheDocument()
-    expect(await screen.findByText('G / Red')).toBeInTheDocument()
+    expect(await screen.findByText('Red')).toBeInTheDocument()
   })
 
   it('deletes an inventory variant after confirmation', async () => {
@@ -562,7 +670,9 @@ describe('App', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete variant Logo Shirt M / Black' }))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Delete variant Logo Shirt M / Black' })
+    )
 
     expect(window.confirm).toHaveBeenCalledWith('Delete this variant from inventory?')
     expect(await screen.findByText('Variant deleted.')).toBeInTheDocument()
@@ -587,7 +697,7 @@ describe('App', () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add to cart Logo Shirt M / Black' }))
+    await addMShirtToCart()
     await waitFor(() => {
       expect(window.sessionStorage.length).toBe(1)
     })
@@ -707,30 +817,15 @@ function mockInventoryProduct(): InventoryProduct {
     bandId: '00000000-0000-0000-0000-000000000002',
     name: 'Logo Shirt',
     category: 'shirt',
-    photo: {
-      full: {
-        objectKey: 'bands/test/photo/full.webp',
-        contentType: 'image/webp',
-        sizeBytes: 1024,
-        width: 1200,
-        height: 900,
-        publicUrl: 'https://storage.example/full-public.webp'
-      },
-      display: {
-        objectKey: 'bands/test/photo/display.webp',
-        contentType: 'image/webp',
-        sizeBytes: 512,
-        width: 1280,
-        height: 960,
-        publicUrl: 'https://storage.example/display-public.webp'
-      }
-    },
+    photo: mockPhoto(),
     variants: [
       {
         id: '44444444-4444-4444-4444-444444444444',
+        colourVariantId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         productId: '33333333-3333-3333-3333-333333333333',
         size: 'm',
         colour: 'Black',
+        photo: mockPhoto(),
         price: { amount: 5000, currency: 'BRL' },
         cost: { amount: 2000, currency: 'BRL' },
         quantity: 2,
@@ -744,6 +839,33 @@ function mockInventoryProduct(): InventoryProduct {
   }
 }
 
+function mockPhoto(): InventoryPhoto {
+  return {
+    full: {
+      objectKey: 'bands/test/photo/full.webp',
+      contentType: 'image/webp',
+      sizeBytes: 1024,
+      width: 1200,
+      height: 900,
+      publicUrl: 'https://storage.example/full-public.webp'
+    },
+    display: {
+      objectKey: 'bands/test/photo/display.webp',
+      contentType: 'image/webp',
+      sizeBytes: 512,
+      width: 1280,
+      height: 960,
+      publicUrl: 'https://storage.example/display-public.webp'
+    }
+  }
+}
+
+async function addMShirtToCart(): Promise<void> {
+  const sizeSelect = await screen.findByRole('combobox', { name: 'Select size Logo Shirt Black' })
+  fireEvent.change(sizeSelect, { target: { value: '44444444-4444-4444-4444-444444444444' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add to cart Logo Shirt Black' }))
+}
+
 function mockInventoryProductWithTwoVariants(): InventoryProduct {
   const product = mockInventoryProduct()
   return {
@@ -752,15 +874,56 @@ function mockInventoryProductWithTwoVariants(): InventoryProduct {
       ...product.variants,
       {
         id: '44444444-4444-4444-4444-444444444445',
+        colourVariantId: product.variants[0].colourVariantId,
         productId: product.id,
         size: 'g',
         colour: 'Black',
+        photo: product.variants[0].photo,
         price: { amount: 5000, currency: 'BRL' },
         cost: { amount: 2000, currency: 'BRL' },
         quantity: 2,
         soldOut: false,
         createdAt: '2026-05-01T12:00:00Z',
         updatedAt: '2026-05-01T12:00:00Z'
+      }
+    ]
+  }
+}
+
+function mockDeadBirdProduct(): InventoryProduct {
+  const product = mockInventoryProduct()
+  const blackM = product.variants[0]
+  const orangePhoto: InventoryPhoto = {
+    full: { ...mockPhoto().full, objectKey: 'bands/test/orange/full.webp' },
+    display: {
+      ...mockPhoto().display,
+      objectKey: 'bands/test/orange/display.webp',
+      publicUrl: 'https://storage.example/orange-display.webp'
+    }
+  }
+  return {
+    ...product,
+    name: 'Dead Bird',
+    variants: [
+      { ...blackM, id: '44444444-4444-4444-4444-444444444445', size: 'p', quantity: 3 },
+      { ...blackM, quantity: 3 },
+      {
+        ...blackM,
+        id: '44444444-4444-4444-4444-444444444446',
+        colourVariantId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        size: 'g',
+        colour: 'Orange',
+        quantity: 1,
+        photo: orangePhoto
+      },
+      {
+        ...blackM,
+        id: '44444444-4444-4444-4444-444444444447',
+        colourVariantId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        size: 'm',
+        colour: 'Orange',
+        quantity: 5,
+        photo: orangePhoto
       }
     ]
   }
@@ -774,9 +937,11 @@ function mockInventoryProductWithSoldOutVariant(): InventoryProduct {
       ...product.variants,
       {
         id: '44444444-4444-4444-4444-444444444445',
+        colourVariantId: product.variants[0].colourVariantId,
         productId: product.id,
         size: 'g',
         colour: 'Black',
+        photo: product.variants[0].photo,
         price: { amount: 5000, currency: 'BRL' },
         cost: { amount: 2000, currency: 'BRL' },
         quantity: 0,

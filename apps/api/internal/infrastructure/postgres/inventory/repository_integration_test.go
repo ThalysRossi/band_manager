@@ -47,6 +47,70 @@ func TestRepositoryCreateProductWritesVariantMovementAndAuditLog(t *testing.T) {
 	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2 AND entity_type = $3", []interface{}{account.BandID, "inventory.product_created", "merch_product"}, 1)
 }
 
+func TestRepositoryGroupsSizesByColourAndKeepsPhotosSeparate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	repository := NewRepository(pool)
+	command := validCreateProductCommand(account, "Dead Bird", 3)
+	blackP := command.Variants[0]
+	blackP.Size = inventorydomain.SizeP
+	blackM := blackP
+	blackM.Size = inventorydomain.SizeM
+	orangeG := blackP
+	orangeG.Size = inventorydomain.SizeG
+	orangeG.Colour = "Orange"
+	orangeG.NormalizedColour = "orange"
+	orangeG.Quantity = 1
+	orangeG.Photo.Full.ObjectKey = "bands/test/products/orange/full.webp"
+	orangeG.Photo.Display.ObjectKey = "bands/test/products/orange/display.webp"
+	orangeG.Photo.Display.Width = 1000
+	orangeG.Photo.Display.Height = 900
+	orangeM := orangeG
+	orangeM.Size = inventorydomain.SizeM
+	orangeM.Quantity = 5
+	command.Variants = []applicationinventory.CreateProductVariantCommand{blackP, blackM, orangeG, orangeM}
+
+	product, err := repository.CreateProduct(ctx, command)
+	if err != nil {
+		t.Fatalf("create two-colour shirt: %v", err)
+	}
+	if len(product.Variants) != 4 {
+		t.Fatalf("expected four size stocks, got %d", len(product.Variants))
+	}
+	if product.Variants[0].ColourVariantID != product.Variants[1].ColourVariantID || product.Variants[2].ColourVariantID != product.Variants[3].ColourVariantID {
+		t.Fatal("sizes of each colour must share a colour variant id")
+	}
+	if product.Variants[0].ColourVariantID == product.Variants[2].ColourVariantID {
+		t.Fatal("black and orange must have separate colour variant ids")
+	}
+	if product.Variants[0].Photo.Display.ObjectKey == product.Variants[2].Photo.Display.ObjectKey {
+		t.Fatal("black and orange must have separate photos")
+	}
+	assertTableCount(t, pool, "merch_colour_variants", "product_id = $1 AND deleted_at IS NULL", []interface{}{product.ID}, 2)
+
+	products, err := repository.ListInventory(ctx, applicationinventory.ListInventoryQuery{Account: account})
+	if err != nil {
+		t.Fatalf("list two-colour shirt: %v", err)
+	}
+	if len(products) != 1 || len(products[0].Variants) != 4 {
+		t.Fatalf("expected one product with four size stocks, got %#v", products)
+	}
+	foundOrangeM := false
+	for _, variant := range products[0].Variants {
+		if variant.Size == inventorydomain.SizeM && variant.NormalizedColour == "orange" {
+			foundOrangeM = true
+			if variant.Quantity != 5 || variant.Photo.Display.ObjectKey != orangeM.Photo.Display.ObjectKey {
+				t.Fatal("listed orange M stock or photo does not match")
+			}
+		}
+	}
+	if !foundOrangeM {
+		t.Fatal("orange M stock was not listed")
+	}
+}
+
 func TestRepositoryCreateProductRejectsDuplicateProductIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -103,6 +167,7 @@ func TestRepositoryCreateVariantWritesInitialMovementAndAuditLog(t *testing.T) {
 		Size:             inventorydomain.SizeG,
 		Colour:           "Vermelha",
 		NormalizedColour: "vermelha",
+		Photo:            product.Photo,
 		Price:            inventorydomain.Money{Amount: 6000, Currency: "BRL"},
 		Cost:             inventorydomain.Money{Amount: 2500, Currency: "BRL"},
 		Quantity:         3,
@@ -137,7 +202,7 @@ func TestRepositoryCreateProductRejectsDatabaseConstraints(t *testing.T) {
 				command.Variants[0].Price.Amount = -1
 				return command
 			},
-			constraints: []string{"merch_variants_price_amount_check"},
+			constraints: []string{"merch_colour_variants_price_amount_check"},
 		},
 		{
 			name: "negative cost",
@@ -145,7 +210,7 @@ func TestRepositoryCreateProductRejectsDatabaseConstraints(t *testing.T) {
 				command.Variants[0].Cost.Amount = -1
 				return command
 			},
-			constraints: []string{"merch_variants_cost_amount_check"},
+			constraints: []string{"merch_colour_variants_cost_amount_check"},
 		},
 		{
 			name: "negative quantity",
@@ -282,6 +347,7 @@ func TestRepositorySoftDeleteVariantHidesVariant(t *testing.T) {
 		Size:             inventorydomain.SizeG,
 		Colour:           "Preta",
 		NormalizedColour: "preta",
+		Photo:            command.Photo,
 		Price:            inventorydomain.Money{Amount: 5000, Currency: "BRL"},
 		Cost:             inventorydomain.Money{Amount: 2000, Currency: "BRL"},
 		Quantity:         3,
@@ -399,6 +465,33 @@ func TestRepositoryUpdateProductWritesAuditLog(t *testing.T) {
 	assertTableCount(t, pool, "audit_logs", "band_id = $1 AND action = $2", []interface{}{account.BandID, "inventory.product_updated"}, 1)
 }
 
+func TestRepositoryRejectsCategoryChangeAcrossSizeGroups(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	repository := NewRepository(pool)
+	product, err := repository.CreateProduct(ctx, validCreateProductCommand(account, "Dead Bird", 3))
+	if err != nil {
+		t.Fatalf("create shirt: %v", err)
+	}
+	_, err = repository.UpdateProduct(ctx, applicationinventory.UpdateProductCommand{
+		Account:        account,
+		ProductID:      product.ID,
+		Name:           product.Name,
+		NormalizedName: product.NormalizedName,
+		Category:       inventorydomain.CategoryVinyl,
+		Photo:          product.Photo,
+		IdempotencyKey: "idem_cross_category",
+		RequestID:      "request_cross_category",
+		UpdatedAt:      testTimestamp().Add(time.Minute),
+	})
+	if err == nil {
+		t.Fatal("expected sized-to-non-sized category change to fail")
+	}
+	assertTableCount(t, pool, "merch_products", "id = $1 AND category = $2", []interface{}{product.ID, inventorydomain.CategoryShirt}, 1)
+}
+
 func TestRepositoryUpdateVariantWritesManualAdjustmentMovementAndAuditLog(t *testing.T) {
 	t.Parallel()
 
@@ -418,6 +511,7 @@ func TestRepositoryUpdateVariantWritesManualAdjustmentMovementAndAuditLog(t *tes
 		Size:             inventorydomain.SizeM,
 		Colour:           "Preta",
 		NormalizedColour: "preta",
+		Photo:            product.Photo,
 		Price:            inventorydomain.Money{Amount: 5500, Currency: "BRL"},
 		Cost:             inventorydomain.Money{Amount: 2500, Currency: "BRL"},
 		Quantity:         5,
@@ -612,7 +706,7 @@ func seedAccount(ctx context.Context, t *testing.T, pool *pgxpool.Pool) applicat
 }
 
 func validCreateProductCommand(account applicationinventory.AccountContext, name string, quantity int) applicationinventory.CreateProductCommand {
-	return applicationinventory.CreateProductCommand{
+	command := applicationinventory.CreateProductCommand{
 		Account:        account,
 		Name:           name,
 		NormalizedName: strings.ToLower(name),
@@ -647,6 +741,8 @@ func validCreateProductCommand(account applicationinventory.AccountContext, name
 		RequestID:      "request_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		CreatedAt:      testTimestamp(),
 	}
+	command.Variants[0].Photo = command.Photo
+	return command
 }
 
 func assertTableCount(t *testing.T, pool *pgxpool.Pool, tableName string, whereClause string, args []interface{}, expectedCount int) {

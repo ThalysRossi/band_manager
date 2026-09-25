@@ -1,14 +1,10 @@
 import { apiRequest } from '../../shared/api/client'
-import type {
-  InventoryCategory,
-  InventoryPhoto,
-  InventorySize,
-  Money
-} from '../inventory/api'
+import type { InventoryCategory, InventoryPhoto, InventorySize, Money } from '../inventory/api'
 
 export type BoothItem = {
   productId: string
   variantId: string
+  colourVariantId: string
   productName: string
   category: InventoryCategory
   size: InventorySize

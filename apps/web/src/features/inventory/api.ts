@@ -11,15 +11,7 @@ export type InventoryCategory =
   | 'cassette'
   | 'accessory'
 
-export type InventorySize =
-  | 'not_applicable'
-  | 'one_size'
-  | 'pp'
-  | 'p'
-  | 'm'
-  | 'g'
-  | 'gg'
-  | 'xgg'
+export type InventorySize = 'not_applicable' | 'one_size' | 'pp' | 'p' | 'm' | 'g' | 'gg' | 'xgg'
 
 export type Money = {
   amount: number
@@ -50,9 +42,11 @@ export type InventoryPhoto = {
 
 export type InventoryVariant = {
   id: string
+  colourVariantId: string
   productId: string
   size: InventorySize
   colour: string
+  photo: InventoryPhoto
   price: Money
   cost: Money
   quantity: number
@@ -75,6 +69,7 @@ export type InventoryProduct = {
 export type InventoryVariantRequest = {
   size: InventorySize
   colour: string
+  photo: InventoryPhotoManifest
   price: Money
   cost: Money
   quantity: number
@@ -254,7 +249,10 @@ export async function updateInventoryVariant(
   })
 }
 
-export async function deleteInventoryVariant(accessToken: string, variantID: string): Promise<void> {
+export async function deleteInventoryVariant(
+  accessToken: string,
+  variantID: string
+): Promise<void> {
   await apiRequest<void>({
     accessToken,
     path: `/inventory/variants/${variantID}`,

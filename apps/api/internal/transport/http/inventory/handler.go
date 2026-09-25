@@ -40,6 +40,7 @@ type CreateProductRequest struct {
 type VariantRequest struct {
 	Size     string       `json:"size"`
 	Colour   string       `json:"colour"`
+	Photo    PhotoRequest `json:"photo"`
 	Price    MoneyRequest `json:"price"`
 	Cost     MoneyRequest `json:"cost"`
 	Quantity *int         `json:"quantity"`
@@ -109,16 +110,18 @@ type ProductResponse struct {
 }
 
 type VariantResponse struct {
-	ID        string               `json:"id"`
-	ProductID string               `json:"productId"`
-	Size      inventorydomain.Size `json:"size"`
-	Colour    string               `json:"colour"`
-	Price     MoneyResponse        `json:"price"`
-	Cost      MoneyResponse        `json:"cost"`
-	Quantity  int                  `json:"quantity"`
-	SoldOut   bool                 `json:"soldOut"`
-	CreatedAt time.Time            `json:"createdAt"`
-	UpdatedAt time.Time            `json:"updatedAt"`
+	ID              string               `json:"id"`
+	ColourVariantID string               `json:"colourVariantId"`
+	ProductID       string               `json:"productId"`
+	Size            inventorydomain.Size `json:"size"`
+	Colour          string               `json:"colour"`
+	Photo           PhotoResponse        `json:"photo"`
+	Price           MoneyResponse        `json:"price"`
+	Cost            MoneyResponse        `json:"cost"`
+	Quantity        int                  `json:"quantity"`
+	SoldOut         bool                 `json:"soldOut"`
+	CreatedAt       time.Time            `json:"createdAt"`
+	UpdatedAt       time.Time            `json:"updatedAt"`
 }
 
 type MoneyResponse struct {
@@ -233,7 +236,7 @@ func (handler Handler) CreateVariant(response http.ResponseWriter, request *http
 		return
 	}
 
-	createdVariant, err := applicationinventory.CreateVariant(request.Context(), handler.inventoryRepository, applicationinventory.CreateVariantInput{
+	createdVariant, err := applicationinventory.CreateVariant(request.Context(), handler.inventoryRepository, handler.photoStorage, applicationinventory.CreateVariantInput{
 		Account:        accountContext,
 		ProductID:      chi.URLParam(request, "productID"),
 		Variant:        variant,
@@ -246,7 +249,7 @@ func (handler Handler) CreateVariant(response http.ResponseWriter, request *http
 		return
 	}
 
-	handler.writeJSON(response, http.StatusCreated, toVariantResponse(createdVariant))
+	handler.writeJSON(response, http.StatusCreated, toVariantResponse(handler.photoStorage, createdVariant))
 }
 
 func (handler Handler) ListInventory(response http.ResponseWriter, request *http.Request) {
@@ -321,7 +324,7 @@ func (handler Handler) UpdateVariant(response http.ResponseWriter, request *http
 		return
 	}
 
-	updatedVariant, err := applicationinventory.UpdateVariant(request.Context(), handler.inventoryRepository, applicationinventory.UpdateVariantInput{
+	updatedVariant, err := applicationinventory.UpdateVariant(request.Context(), handler.inventoryRepository, handler.photoStorage, applicationinventory.UpdateVariantInput{
 		Account:        accountContext,
 		VariantID:      chi.URLParam(request, "variantID"),
 		Variant:        variant,
@@ -334,7 +337,7 @@ func (handler Handler) UpdateVariant(response http.ResponseWriter, request *http
 		return
 	}
 
-	handler.writeJSON(response, http.StatusOK, toVariantResponse(updatedVariant))
+	handler.writeJSON(response, http.StatusOK, toVariantResponse(handler.photoStorage, updatedVariant))
 }
 
 func (handler Handler) SoftDeleteProduct(response http.ResponseWriter, request *http.Request) {
@@ -490,6 +493,7 @@ func toVariantInput(response http.ResponseWriter, request VariantRequest) (appli
 	return applicationinventory.VariantInput{
 		Size:        request.Size,
 		Colour:      request.Colour,
+		Photo:       toPhotoInput(request.Photo),
 		PriceAmount: *request.Price.Amount,
 		CostAmount:  *request.Cost.Amount,
 		Currency:    request.Price.Currency,
@@ -547,7 +551,7 @@ func toProductResponse(photoStorage applicationinventory.PhotoStorage, product a
 		Name:      product.Name,
 		Category:  product.Category,
 		Photo:     toPhotoResponse(photoStorage, product.Photo),
-		Variants:  toVariantResponses(product.Variants),
+		Variants:  toVariantResponses(photoStorage, product.Variants),
 		CreatedAt: product.CreatedAt,
 		UpdatedAt: product.UpdatedAt,
 	}
@@ -591,21 +595,23 @@ func toPhotoVariantResponse(photoStorage applicationinventory.PhotoStorage, phot
 	}
 }
 
-func toVariantResponses(variants []applicationinventory.Variant) []VariantResponse {
+func toVariantResponses(photoStorage applicationinventory.PhotoStorage, variants []applicationinventory.Variant) []VariantResponse {
 	responses := make([]VariantResponse, 0, len(variants))
 	for _, variant := range variants {
-		responses = append(responses, toVariantResponse(variant))
+		responses = append(responses, toVariantResponse(photoStorage, variant))
 	}
 
 	return responses
 }
 
-func toVariantResponse(variant applicationinventory.Variant) VariantResponse {
+func toVariantResponse(photoStorage applicationinventory.PhotoStorage, variant applicationinventory.Variant) VariantResponse {
 	return VariantResponse{
-		ID:        variant.ID,
-		ProductID: variant.ProductID,
-		Size:      variant.Size,
-		Colour:    variant.Colour,
+		ID:              variant.ID,
+		ColourVariantID: variant.ColourVariantID,
+		ProductID:       variant.ProductID,
+		Size:            variant.Size,
+		Colour:          variant.Colour,
+		Photo:           toPhotoResponse(photoStorage, variant.Photo),
 		Price: MoneyResponse{
 			Amount:   variant.Price.Amount,
 			Currency: variant.Price.Currency,

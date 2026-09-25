@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Plus, ShoppingCart } from 'lucide-react'
 import type { TranslationKey } from 'i18n'
@@ -14,6 +15,7 @@ export function MerchBoothPage() {
   const merchBooth = useMerchBooth()
   const cart = useMerchBoothCart()
   const canCheckout = merchBooth.account.activeBand.canWrite
+  const colourGroups = groupBoothItems(merchBooth.items)
 
   return (
     <section className="grid gap-ui-24">
@@ -23,7 +25,7 @@ export function MerchBoothPage() {
             {merchBooth.translate('nav.merchBooth')}
           </h2>
           <p className="m-0 text-base text-white-300">
-            {merchBooth.translate('merchBooth.itemCount')}: {merchBooth.items.length}
+            {merchBooth.translate('merchBooth.itemCount')}: {colourGroups.length}
           </p>
         </div>
         {canCheckout ? (
@@ -60,16 +62,14 @@ export function MerchBoothPage() {
         </p>
       ) : null}
 
-      {merchBooth.items.length === 0 ? (
-        <p className="m-0 text-base text-white-300">
-          {merchBooth.translate('merchBooth.empty')}
-        </p>
+      {colourGroups.length === 0 ? (
+        <p className="m-0 text-base text-white-300">{merchBooth.translate('merchBooth.empty')}</p>
       ) : (
         <div className="grid gap-ui-16 min-[600px]:grid-cols-2 min-[1200px]:grid-cols-3">
-          {merchBooth.items.map((item) => (
+          {colourGroups.map((group) => (
             <BoothItemCard
-              key={item.variantId}
-              item={item}
+              key={group.id}
+              group={group}
               canCheckout={canCheckout}
               translate={merchBooth.translate}
               onAddToCart={cart.addItem}
@@ -81,46 +81,101 @@ export function MerchBoothPage() {
   )
 }
 
+type BoothColourGroup = {
+  id: string
+  productName: string
+  category: BoothItem['category']
+  colour: string
+  price: BoothItem['price']
+  photo: BoothItem['photo']
+  sizes: BoothItem[]
+}
+
+function groupBoothItems(items: BoothItem[]): BoothColourGroup[] {
+  const groups = new Map<string, BoothColourGroup>()
+  for (const item of items) {
+    const existing = groups.get(item.colourVariantId)
+    if (existing === undefined) {
+      groups.set(item.colourVariantId, {
+        id: item.colourVariantId,
+        productName: item.productName,
+        category: item.category,
+        colour: item.colour,
+        price: item.price,
+        photo: item.photo,
+        sizes: [item]
+      })
+    } else {
+      existing.sizes.push(item)
+    }
+  }
+  return Array.from(groups.values())
+}
+
 function BoothItemCard(props: {
-  item: BoothItem
+  group: BoothColourGroup
   canCheckout: boolean
   translate: Translate
   onAddToCart: (variantId: string) => void
 }) {
-  const variantLabel = boothItemLabel(props.item, props.translate)
+  const [selectedVariantID, setSelectedVariantID] = useState<string>('')
+  const sized = props.group.category === 'shirt' || props.group.category === 'hoodie'
+  const selectedItem = sized
+    ? props.group.sizes.find((item) => item.variantId === selectedVariantID)
+    : props.group.sizes[0]
+  const totalQuantity = props.group.sizes.reduce((total, item) => total + item.quantity, 0)
+  const soldOut = totalQuantity === 0
 
   return (
     <Card className="overflow-hidden py-0">
       <img
-        src={props.item.photo.display.publicUrl}
-        alt={`${props.item.productName} ${props.translate('merchBooth.photoAlt')}`}
+        src={props.group.photo.display.publicUrl}
+        alt={`${props.group.productName} ${props.group.colour} ${props.translate('merchBooth.photoAlt')}`}
         className="aspect-[4/3] w-full bg-muted object-cover"
       />
       <CardHeader className="gap-ui-8 px-ui-16 pt-ui-16">
         <div className="flex flex-wrap items-start justify-between gap-ui-8">
-          <h3 className="m-0 text-base leading-tight">{props.item.productName}</h3>
-          <Badge variant="outline">{props.translate(categoryLabelKey(props.item.category))}</Badge>
+          <h3 className="m-0 text-base leading-tight">{props.group.productName}</h3>
+          <Badge variant="outline">{props.translate(categoryLabelKey(props.group.category))}</Badge>
         </div>
-        <p className="m-0 text-sm text-white-300">
-          {props.translate(sizeLabelKey(props.item.size))} / {props.item.colour}
-        </p>
+        <p className="m-0 text-sm text-white-300">{props.group.colour}</p>
       </CardHeader>
       <CardContent className="grid gap-ui-16 px-ui-16 pb-ui-16">
         <div className="flex items-center justify-between gap-ui-12">
-          <strong className="text-base">{formatMoney(props.item.price.amount)}</strong>
-          <Badge variant={props.item.soldOut ? 'destructive' : 'secondary'}>
-            {props.item.soldOut
+          <strong className="text-base">{formatMoney(props.group.price.amount)}</strong>
+          <Badge variant={soldOut ? 'destructive' : 'secondary'}>
+            {soldOut
               ? props.translate('inventory.soldOut')
-              : `${props.item.quantity} ${props.translate('inventory.inStockCountSuffix')}`}
+              : `${totalQuantity} ${props.translate('inventory.inStockCountSuffix')}`}
           </Badge>
         </div>
+        {sized ? (
+          <select
+            className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
+            aria-label={`${props.translate('merchBooth.selectSize')} ${props.group.productName} ${props.group.colour}`}
+            value={selectedVariantID}
+            onChange={(event) => setSelectedVariantID(event.currentTarget.value)}
+          >
+            <option value="">{props.translate('merchBooth.selectSize')}</option>
+            {props.group.sizes.map((item) => (
+              <option key={item.variantId} value={item.variantId} disabled={item.soldOut}>
+                {props.translate(sizeLabelKey(item.size))} —{' '}
+                {item.soldOut
+                  ? props.translate('inventory.soldOut')
+                  : `${item.quantity} ${props.translate('inventory.inStockCountSuffix')}`}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {props.canCheckout ? (
           <Button
             type="button"
             variant="outline"
-            disabled={props.item.soldOut}
-            aria-label={`${props.translate('merchBooth.addToCart')} ${variantLabel}`}
-            onClick={() => props.onAddToCart(props.item.variantId)}
+            disabled={selectedItem === undefined || selectedItem.soldOut}
+            aria-label={`${props.translate('merchBooth.addToCart')} ${props.group.productName} ${props.group.colour}`}
+            onClick={() => {
+              if (selectedItem !== undefined) props.onAddToCart(selectedItem.variantId)
+            }}
           >
             <Plus aria-hidden="true" />
             {props.translate('merchBooth.addToCart')}

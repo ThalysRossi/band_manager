@@ -64,6 +64,8 @@ export type TranslationKey =
   | 'account.statusHeader'
   | 'account.title'
   | 'inventory.addVariant'
+  | 'inventory.addProduct'
+  | 'inventory.addSize'
   | 'inventory.addVariantSuccess'
   | 'inventory.actionsHeader'
   | 'inventory.cancelEdit'
@@ -90,6 +92,8 @@ export type TranslationKey =
   | 'inventory.deleteVariant'
   | 'inventory.deleteVariantConfirm'
   | 'inventory.deleteVariantSuccess'
+  | 'inventory.duplicateProduct'
+  | 'inventory.duplicateVariant'
   | 'inventory.editCategoryLabel'
   | 'inventory.editNameLabel'
   | 'inventory.editProduct'
@@ -101,6 +105,7 @@ export type TranslationKey =
   | 'inventory.editVariantQuantityLabel'
   | 'inventory.editVariantSizeLabel'
   | 'inventory.editVariantTitle'
+  | 'inventory.existingColourSizeNote'
   | 'inventory.empty'
   | 'inventory.error'
   | 'inventory.formInvalid'
@@ -127,6 +132,7 @@ export type TranslationKey =
   | 'inventory.productHeader'
   | 'inventory.quantityLabel'
   | 'inventory.removeVariant'
+  | 'inventory.removeSize'
   | 'inventory.size.g'
   | 'inventory.size.gg'
   | 'inventory.size.m'
@@ -136,6 +142,7 @@ export type TranslationKey =
   | 'inventory.size.pp'
   | 'inventory.size.xgg'
   | 'inventory.sizeLabel'
+  | 'inventory.sizesTitle'
   | 'inventory.soldOut'
   | 'inventory.statusHeader'
   | 'inventory.stockHeader'
@@ -166,6 +173,7 @@ export type TranslationKey =
   | 'merchBooth.openCart'
   | 'merchBooth.orderSummary'
   | 'merchBooth.photoAlt'
+  | 'merchBooth.selectSize'
   | 'merchBooth.removeFromCart'
   | 'merchBooth.total'
   | 'nav.inventory'
@@ -192,7 +200,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'auth.passwordResetSent': 'Check your email for the password reset link.',
     'auth.passwordResetSubmit': 'Send reset link',
     'auth.passwordUpdateSubmit': 'Update password',
-    'auth.passwordUpdateFailed': 'Password update failed. Request a new recovery link and try again.',
+    'auth.passwordUpdateFailed':
+      'Password update failed. Request a new recovery link and try again.',
     'auth.passwordUpdateTitle': 'Choose a new password',
     'auth.passwordUpdated': 'Password updated.',
     'auth.signupSubmit': 'Create account',
@@ -243,6 +252,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Account',
     'inventory.addVariant': 'Add variant',
+    'inventory.addProduct': 'Add product',
+    'inventory.addSize': 'Add size',
     'inventory.addVariantSuccess': 'Variant created.',
     'inventory.actionsHeader': 'Actions',
     'inventory.cancelEdit': 'Cancel',
@@ -269,6 +280,9 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.deleteVariant': 'Delete variant',
     'inventory.deleteVariantConfirm': 'Delete this variant from inventory?',
     'inventory.deleteVariantSuccess': 'Variant deleted.',
+    'inventory.duplicateProduct': 'A product with this category and name already exists.',
+    'inventory.duplicateVariant':
+      'This colour and size already exist, or the colour has different photo, price, or cost.',
     'inventory.editCategoryLabel': 'Edit category',
     'inventory.editNameLabel': 'Edit product name',
     'inventory.editProduct': 'Edit product',
@@ -280,14 +294,15 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.editVariantQuantityLabel': 'Edit variant quantity',
     'inventory.editVariantSizeLabel': 'Edit variant size',
     'inventory.editVariantTitle': 'Edit variant',
+    'inventory.existingColourSizeNote':
+      'This size uses the colour’s existing photo, price, and cost.',
     'inventory.empty': 'No inventory products yet.',
     'inventory.error': 'Inventory request failed.',
     'inventory.formInvalid': 'Check the inventory form and try again.',
     'inventory.inStock': 'In stock',
     'inventory.inStockCountSuffix': 'in stock',
     'inventory.loading': 'Loading inventory...',
-    'inventory.lastVariantDeleteDisabled':
-      'Delete the product to remove its final variant.',
+    'inventory.lastVariantDeleteDisabled': 'Delete the product to remove its final variant.',
     'inventory.nameLabel': 'Product name',
     'inventory.newVariantColourLabel': 'New variant colour',
     'inventory.newVariantCostLabel': 'New variant cost (BRL)',
@@ -308,6 +323,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.productHeader': 'Product',
     'inventory.quantityLabel': 'Quantity',
     'inventory.removeVariant': 'Remove variant',
+    'inventory.removeSize': 'Remove size',
     'inventory.size.g': 'G',
     'inventory.size.gg': 'GG',
     'inventory.size.m': 'M',
@@ -317,6 +333,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.size.pp': 'PP',
     'inventory.size.xgg': 'XGG',
     'inventory.sizeLabel': 'Size',
+    'inventory.sizesTitle': 'Sizes and stock',
     'inventory.soldOut': 'Sold out',
     'inventory.statusHeader': 'Status',
     'inventory.stockHeader': 'Stock',
@@ -331,7 +348,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'merchBooth.addToCart': 'Add to cart',
     'merchBooth.backToBooth': 'Back to merch booth',
     'merchBooth.cartEmpty': 'Your cart is empty.',
-    'merchBooth.cartPersistenceError': 'The cart could not be restored or saved in this browser session.',
+    'merchBooth.cartPersistenceError':
+      'The cart could not be restored or saved in this browser session.',
     'merchBooth.cartReadOnly': 'Your role does not allow merch booth checkout.',
     'merchBooth.cartReconciled': 'The cart was updated to match current stock.',
     'merchBooth.cartTitle': 'Cart',
@@ -347,6 +365,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'merchBooth.openCart': 'Open cart',
     'merchBooth.orderSummary': 'Order summary',
     'merchBooth.photoAlt': 'product photo',
+    'merchBooth.selectSize': 'Select size',
     'merchBooth.removeFromCart': 'Remove from cart',
     'merchBooth.total': 'Total',
     'nav.inventory': 'Inventory',
@@ -423,6 +442,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'account.statusHeader': 'Status',
     'account.title': 'Conta',
     'inventory.addVariant': 'Adicionar variante',
+    'inventory.addProduct': 'Adicionar produto',
+    'inventory.addSize': 'Adicionar tamanho',
     'inventory.addVariantSuccess': 'Variante criada.',
     'inventory.actionsHeader': 'Acoes',
     'inventory.cancelEdit': 'Cancelar',
@@ -449,6 +470,9 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.deleteVariant': 'Remover variante',
     'inventory.deleteVariantConfirm': 'Remover esta variante do estoque?',
     'inventory.deleteVariantSuccess': 'Variante removida.',
+    'inventory.duplicateProduct': 'Ja existe um produto com esta categoria e nome.',
+    'inventory.duplicateVariant':
+      'Esta cor e tamanho ja existem, ou a cor tem foto, preco ou custo diferente.',
     'inventory.editCategoryLabel': 'Editar categoria',
     'inventory.editNameLabel': 'Editar nome do produto',
     'inventory.editProduct': 'Editar produto',
@@ -460,14 +484,15 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.editVariantQuantityLabel': 'Editar quantidade da variante',
     'inventory.editVariantSizeLabel': 'Editar tamanho da variante',
     'inventory.editVariantTitle': 'Editar variante',
+    'inventory.existingColourSizeNote':
+      'Este tamanho usa a foto, o preco e o custo existentes da cor.',
     'inventory.empty': 'Nenhum produto no estoque ainda.',
     'inventory.error': 'A requisicao do estoque falhou.',
     'inventory.formInvalid': 'Confira o formulario do estoque e tente novamente.',
     'inventory.inStock': 'Em estoque',
     'inventory.inStockCountSuffix': 'em estoque',
     'inventory.loading': 'Carregando estoque...',
-    'inventory.lastVariantDeleteDisabled':
-      'Remova o produto para excluir sua ultima variante.',
+    'inventory.lastVariantDeleteDisabled': 'Remova o produto para excluir sua ultima variante.',
     'inventory.nameLabel': 'Nome do produto',
     'inventory.newVariantColourLabel': 'Cor da nova variante',
     'inventory.newVariantCostLabel': 'Custo da nova variante (BRL)',
@@ -488,6 +513,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.productHeader': 'Produto',
     'inventory.quantityLabel': 'Quantidade',
     'inventory.removeVariant': 'Remover variante',
+    'inventory.removeSize': 'Remover tamanho',
     'inventory.size.g': 'G',
     'inventory.size.gg': 'GG',
     'inventory.size.m': 'M',
@@ -497,6 +523,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'inventory.size.pp': 'PP',
     'inventory.size.xgg': 'XGG',
     'inventory.sizeLabel': 'Tamanho',
+    'inventory.sizesTitle': 'Tamanhos e estoque',
     'inventory.soldOut': 'Esgotado',
     'inventory.statusHeader': 'Status',
     'inventory.stockHeader': 'Estoque',
@@ -511,7 +538,8 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'merchBooth.addToCart': 'Adicionar ao carrinho',
     'merchBooth.backToBooth': 'Voltar para a banca',
     'merchBooth.cartEmpty': 'Seu carrinho esta vazio.',
-    'merchBooth.cartPersistenceError': 'O carrinho nao pode ser restaurado ou salvo nesta sessao do navegador.',
+    'merchBooth.cartPersistenceError':
+      'O carrinho nao pode ser restaurado ou salvo nesta sessao do navegador.',
     'merchBooth.cartReadOnly': 'Seu perfil nao permite concluir vendas na banca.',
     'merchBooth.cartReconciled': 'O carrinho foi atualizado de acordo com o estoque atual.',
     'merchBooth.cartTitle': 'Carrinho',
@@ -527,6 +555,7 @@ export const translations: Record<Locale, TranslationDictionary> = {
     'merchBooth.openCart': 'Abrir carrinho',
     'merchBooth.orderSummary': 'Resumo do pedido',
     'merchBooth.photoAlt': 'foto do produto',
+    'merchBooth.selectSize': 'Selecione o tamanho',
     'merchBooth.removeFromCart': 'Remover do carrinho',
     'merchBooth.total': 'Total',
     'nav.inventory': 'Estoque',

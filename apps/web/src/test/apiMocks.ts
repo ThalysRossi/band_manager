@@ -78,7 +78,10 @@ export const apiHandlers = [
     return HttpResponse.json({ products: mockAPIState.inventoryProducts }, { status: 200 })
   }),
   http.get(`${apiBaseURL}/merch-booth/items`, () => {
-    return HttpResponse.json({ items: merchBoothItems(mockAPIState.inventoryProducts) }, { status: 200 })
+    return HttpResponse.json(
+      { items: merchBoothItems(mockAPIState.inventoryProducts) },
+      { status: 200 }
+    )
   }),
   http.post(`${apiBaseURL}/merch-booth/checkouts/cash`, async ({ request }) => {
     const body = (await request.json()) as CashCheckoutRequest
@@ -152,9 +155,14 @@ export const apiHandlers = [
 
     const createdVariant: InventoryVariant = {
       id: '55555555-5555-5555-5555-555555555555',
+      colourVariantId:
+        product.variants.find(
+          (variant) => variant.colour.toLowerCase() === body.colour.toLowerCase()
+        )?.colourVariantId ?? 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab',
       productId: product.id,
       size: body.size,
       colour: body.colour,
+      photo: inventoryPhotoFromRequest(body.photo),
       price: body.price,
       cost: body.cost,
       quantity: body.quantity,
@@ -232,6 +240,7 @@ export const apiHandlers = [
       ...variant,
       size: body.size,
       colour: body.colour,
+      photo: inventoryPhotoFromRequest(body.photo),
       price: body.price,
       cost: body.cost,
       quantity: body.quantity,
@@ -241,7 +250,20 @@ export const apiHandlers = [
     const updatedProduct: InventoryProduct = {
       ...product,
       variants: product.variants.map((inventoryVariant) => {
-        return inventoryVariant.id === variantID ? updatedVariant : inventoryVariant
+        if (inventoryVariant.colourVariantId !== variant.colourVariantId) {
+          return inventoryVariant
+        }
+        if (inventoryVariant.id === variantID) {
+          return updatedVariant
+        }
+        return {
+          ...inventoryVariant,
+          colour: body.colour,
+          photo: inventoryPhotoFromRequest(body.photo),
+          price: body.price,
+          cost: body.cost,
+          updatedAt: '2026-05-01T13:00:00Z'
+        }
       }),
       updatedAt: '2026-05-01T13:00:00Z'
     }
@@ -445,9 +467,11 @@ function inventoryProductFromRequest(request: CreateInventoryProductRequest): In
     photo: inventoryPhotoFromRequest(request.photo),
     variants: request.variants.map((variant, index) => ({
       id: `44444444-4444-4444-4444-44444444444${index}`,
+      colourVariantId: `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa${request.variants.findIndex((item) => item.colour.toLowerCase() === variant.colour.toLowerCase())}`,
       productId: '33333333-3333-3333-3333-333333333333',
       size: variant.size,
       colour: variant.colour,
+      photo: inventoryPhotoFromRequest(variant.photo),
       price: variant.price,
       cost: variant.cost,
       quantity: variant.quantity,
@@ -486,6 +510,7 @@ function merchBoothItems(products: InventoryProduct[]): BoothItem[] {
     return product.variants.map((variant) => ({
       productId: product.id,
       variantId: variant.id,
+      colourVariantId: variant.colourVariantId,
       productName: product.name,
       category: product.category,
       size: variant.size,
@@ -494,7 +519,7 @@ function merchBoothItems(products: InventoryProduct[]): BoothItem[] {
       cost: variant.cost,
       quantity: variant.quantity,
       soldOut: variant.soldOut,
-      photo: product.photo
+      photo: variant.photo
     }))
   })
 }

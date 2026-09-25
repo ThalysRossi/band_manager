@@ -366,6 +366,7 @@ func seedProduct(t *testing.T, ctx context.Context, pool *pgxpool.Pool, bandID s
 
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	productID := uuid.NewString()
+	colourVariantID := uuid.NewString()
 	variantID := uuid.NewString()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO merch_products (
@@ -379,14 +380,27 @@ func seedProduct(t *testing.T, ctx context.Context, pool *pgxpool.Pool, bandID s
 	if err != nil {
 		t.Fatalf("seed product: %v", err)
 	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO merch_colour_variants (
+			id, band_id, product_id, colour, normalized_colour, price_amount, cost_amount, currency,
+			photo_full_object_key, photo_full_content_type, photo_full_size_bytes, photo_full_width, photo_full_height,
+			photo_display_object_key, photo_display_content_type, photo_display_size_bytes, photo_display_width, photo_display_height,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $19)
+	`, colourVariantID, bandID, productID, "Preta", "preta", 5000, 2000, "BRL",
+		"bands/test/products/photo/full.webp", "image/webp", 1024, 1200, 900,
+		"bands/test/products/photo/display.webp", "image/webp", 512, 1280, 960, now)
+	if err != nil {
+		t.Fatalf("seed colour variant: %v", err)
+	}
 
 	_, err = pool.Exec(ctx, `
 		INSERT INTO merch_variants (
-			id, band_id, product_id, size, colour, normalized_colour,
+			id, band_id, product_id, colour_variant_id, size, colour, normalized_colour,
 			price_amount, cost_amount, currency, quantity, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-	`, variantID, bandID, productID, "m", "Preta", "preta", 5000, 2000, "BRL", 10, now)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+	`, variantID, bandID, productID, colourVariantID, "m", "Preta", "preta", 5000, 2000, "BRL", 10, now)
 	if err != nil {
 		t.Fatalf("seed variant: %v", err)
 	}

@@ -81,7 +81,24 @@ func TestRepositoryCreateCashCheckoutRejectsDeletedVariant(t *testing.T) {
 	pool, account := newIntegrationDatabase(t)
 	inventoryProduct := createInventoryProduct(t, ctx, pool, account, "Camisa Deleted Variant", 2)
 	inventoryRepository := postgresinventory.NewRepository(pool)
-	err := inventoryRepository.SoftDeleteVariant(ctx, applicationinventory.SoftDeleteVariantCommand{
+	_, err := inventoryRepository.CreateVariant(ctx, applicationinventory.CreateVariantCommand{
+		Account:          applicationinventory.AccountContext{UserID: account.UserID, BandID: account.BandID, Role: account.Role},
+		ProductID:        inventoryProduct.ID,
+		Size:             inventorydomain.SizeG,
+		Colour:           "Preta",
+		NormalizedColour: "preta",
+		Photo:            inventoryProduct.Photo,
+		Price:            inventorydomain.Money{Amount: 5000, Currency: "BRL"},
+		Cost:             inventorydomain.Money{Amount: 2000, Currency: "BRL"},
+		Quantity:         1,
+		IdempotencyKey:   "idem_create_second_size",
+		RequestID:        "request_create_second_size",
+		CreatedAt:        testTimestamp(),
+	})
+	if err != nil {
+		t.Fatalf("create second size: %v", err)
+	}
+	err = inventoryRepository.SoftDeleteVariant(ctx, applicationinventory.SoftDeleteVariantCommand{
 		Account: applicationinventory.AccountContext{
 			UserID: account.UserID,
 			BandID: account.BandID,
@@ -101,6 +118,66 @@ func TestRepositoryCreateCashCheckoutRejectsDeletedVariant(t *testing.T) {
 	if !errors.Is(err, applicationmerchbooth.ErrBoothItemNotFound) {
 		t.Fatalf("expected booth item not found error, got %v", err)
 	}
+}
+
+func TestRepositoryCreateCashCheckoutDecrementsOnlySelectedColourSize(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, account := newIntegrationDatabase(t)
+	product := createInventoryProduct(t, ctx, pool, account, "Dead Bird", 3)
+	inventoryRepository := postgresinventory.NewRepository(pool)
+	blackP, err := inventoryRepository.CreateVariant(ctx, applicationinventory.CreateVariantCommand{
+		Account:   applicationinventory.AccountContext{UserID: account.UserID, BandID: account.BandID, Role: account.Role},
+		ProductID: product.ID, Size: inventorydomain.SizeP, Colour: "Preta", NormalizedColour: "preta",
+		Photo: product.Photo, Price: inventorydomain.Money{Amount: 5000, Currency: "BRL"}, Cost: inventorydomain.Money{Amount: 2000, Currency: "BRL"}, Quantity: 3,
+		IdempotencyKey: "idem_black_p", RequestID: "request_black_p", CreatedAt: testTimestamp(),
+	})
+	if err != nil {
+		t.Fatalf("create black P stock: %v", err)
+	}
+	orangePhoto := product.Photo
+	orangePhoto.Full.ObjectKey = "bands/test/products/orange/full.webp"
+	orangePhoto.Display.ObjectKey = "bands/test/products/orange/display.webp"
+	orangeG, err := inventoryRepository.CreateVariant(ctx, applicationinventory.CreateVariantCommand{
+		Account:   applicationinventory.AccountContext{UserID: account.UserID, BandID: account.BandID, Role: account.Role},
+		ProductID: product.ID, Size: inventorydomain.SizeG, Colour: "Laranja", NormalizedColour: "laranja",
+		Photo: orangePhoto, Price: inventorydomain.Money{Amount: 5000, Currency: "BRL"}, Cost: inventorydomain.Money{Amount: 2000, Currency: "BRL"}, Quantity: 1,
+		IdempotencyKey: "idem_orange_g", RequestID: "request_orange_g", CreatedAt: testTimestamp(),
+	})
+	if err != nil {
+		t.Fatalf("create orange G stock: %v", err)
+	}
+	orangeM, err := inventoryRepository.CreateVariant(ctx, applicationinventory.CreateVariantCommand{
+		Account:   applicationinventory.AccountContext{UserID: account.UserID, BandID: account.BandID, Role: account.Role},
+		ProductID: product.ID, Size: inventorydomain.SizeM, Colour: "Laranja", NormalizedColour: "laranja",
+		Photo: orangePhoto, Price: inventorydomain.Money{Amount: 5000, Currency: "BRL"}, Cost: inventorydomain.Money{Amount: 2000, Currency: "BRL"}, Quantity: 5,
+		IdempotencyKey: "idem_orange_m", RequestID: "request_orange_m", CreatedAt: testTimestamp(),
+	})
+	if err != nil {
+		t.Fatalf("create orange M stock: %v", err)
+	}
+
+	repository := NewRepository(pool)
+	items, err := repository.ListBoothItems(ctx, applicationmerchbooth.ListBoothItemsQuery{Account: account})
+	if err != nil {
+		t.Fatalf("list booth items: %v", err)
+	}
+	if len(items) != 4 || orangeG.ColourVariantID != orangeM.ColourVariantID || orangeG.ColourVariantID == blackP.ColourVariantID {
+		t.Fatal("booth colour grouping is incorrect")
+	}
+	for _, item := range items {
+		if item.VariantID == orangeG.ID && item.Photo.Display.ObjectKey != orangePhoto.Display.ObjectKey {
+			t.Fatal("orange booth item must use orange photo")
+		}
+	}
+	if _, err := repository.CreateCashCheckout(ctx, validCashCheckoutCommand(account, orangeG.ID, 1)); err != nil {
+		t.Fatalf("checkout orange G: %v", err)
+	}
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = 0", []interface{}{orangeG.ID}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = 5", []interface{}{orangeM.ID}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = 3", []interface{}{blackP.ID}, 1)
+	assertTableCount(t, pool, "merch_variants", "id = $1 AND quantity = 3", []interface{}{product.Variants[0].ID}, 1)
 }
 
 func TestRepositoryCreateCashCheckoutIsIdempotent(t *testing.T) {
@@ -613,7 +690,7 @@ func createInventoryProduct(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 	t.Helper()
 
 	repository := postgresinventory.NewRepository(pool)
-	product, err := repository.CreateProduct(ctx, applicationinventory.CreateProductCommand{
+	command := applicationinventory.CreateProductCommand{
 		Account: applicationinventory.AccountContext{
 			UserID: account.UserID,
 			BandID: account.BandID,
@@ -651,7 +728,9 @@ func createInventoryProduct(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 		IdempotencyKey: "idem_inventory_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		RequestID:      "request_inventory_" + strings.ReplaceAll(uuid.NewString(), "-", "_"),
 		CreatedAt:      testTimestamp(),
-	})
+	}
+	command.Variants[0].Photo = command.Photo
+	product, err := repository.CreateProduct(ctx, command)
 	if err != nil {
 		t.Fatalf("create inventory product: %v", err)
 	}
@@ -804,5 +883,5 @@ func assertTableCount(t *testing.T, pool *pgxpool.Pool, tableName string, whereC
 }
 
 func testTimestamp() time.Time {
-	return time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	return time.Now().UTC().Truncate(time.Second)
 }

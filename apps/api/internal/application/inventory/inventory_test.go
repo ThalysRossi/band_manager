@@ -31,6 +31,7 @@ func TestCreateProductRejectsDuplicateVariants(t *testing.T) {
 	input.Variants = append(input.Variants, VariantInput{
 		Size:        "m",
 		Colour:      "black",
+		Photo:       input.Photo,
 		PriceAmount: 5000,
 		CostAmount:  2000,
 		Currency:    "BRL",
@@ -40,6 +41,38 @@ func TestCreateProductRejectsDuplicateVariants(t *testing.T) {
 	_, err := CreateProduct(context.Background(), &repository, &fakePhotoStorage{}, input)
 	if err == nil {
 		t.Fatal("expected duplicate variant validation error")
+	}
+}
+
+func TestCreateProductGroupsSizesByColourWithIndependentPhotos(t *testing.T) {
+	t.Parallel()
+
+	input := validCreateProductInput()
+	input.Variants[0].Size = "p"
+	mediumBlack := input.Variants[0]
+	mediumBlack.Size = "m"
+	orange := input.Variants[0]
+	orange.Size = "g"
+	orange.Colour = "Orange"
+	orange.Photo.Full.ObjectKey = "bands/band_1/inventory/photos/orange/full.webp"
+	orange.Photo.Display.ObjectKey = "bands/band_1/inventory/photos/orange/display.webp"
+	input.Variants = []VariantInput{input.Variants[0], mediumBlack, orange}
+
+	repository := fakeRepository{product: Product{ID: "product_1"}}
+	storage := fakePhotoStorage{objects: validPhotoStorageObjects()}
+	storage.objects[orange.Photo.Full.ObjectKey] = PhotoObjectInfo{ObjectKey: orange.Photo.Full.ObjectKey, ContentType: inventorydomain.PhotoContentTypeWebP, SizeBytes: orange.Photo.Full.SizeBytes}
+	storage.objects[orange.Photo.Display.ObjectKey] = PhotoObjectInfo{ObjectKey: orange.Photo.Display.ObjectKey, ContentType: inventorydomain.PhotoContentTypeWebP, SizeBytes: orange.Photo.Display.SizeBytes}
+	if _, err := CreateProduct(context.Background(), &repository, &storage, input); err != nil {
+		t.Fatalf("create product with colour variants: %v", err)
+	}
+	if len(repository.createCommand.Variants) != 3 {
+		t.Fatalf("expected three size stocks, got %d", len(repository.createCommand.Variants))
+	}
+	if repository.createCommand.Variants[0].Photo != repository.createCommand.Variants[1].Photo {
+		t.Fatal("black sizes must share their photo")
+	}
+	if repository.createCommand.Variants[0].Photo == repository.createCommand.Variants[2].Photo {
+		t.Fatal("orange must have an independent photo")
 	}
 }
 
@@ -131,7 +164,7 @@ func TestUpdateVariantRejectsNegativeQuantity(t *testing.T) {
 		UpdatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 	}
 
-	_, err := UpdateVariant(context.Background(), &repository, input)
+	_, err := UpdateVariant(context.Background(), &repository, &fakePhotoStorage{}, input)
 	if err == nil {
 		t.Fatal("expected quantity validation error")
 	}
@@ -149,6 +182,7 @@ func TestCreateVariantStoresValidatedCommand(t *testing.T) {
 		Variant: VariantInput{
 			Size:        "g",
 			Colour:      " Red ",
+			Photo:       validCreateProductInput().Photo,
 			PriceAmount: 6000,
 			CostAmount:  2500,
 			Currency:    "BRL",
@@ -159,7 +193,7 @@ func TestCreateVariantStoresValidatedCommand(t *testing.T) {
 		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.FixedZone("BRT", -3*60*60)),
 	}
 
-	variant, err := CreateVariant(context.Background(), &repository, input)
+	variant, err := CreateVariant(context.Background(), &repository, &fakePhotoStorage{objects: validPhotoStorageObjects()}, input)
 	if err != nil {
 		t.Fatalf("create variant: %v", err)
 	}
@@ -210,7 +244,7 @@ func TestListInventoryAllowsViewerReadAccess(t *testing.T) {
 }
 
 func validCreateProductInput() CreateProductInput {
-	return CreateProductInput{
+	input := CreateProductInput{
 		Account:  validAccountContext(),
 		Name:     " Camiseta   Logo ",
 		Category: "shirt",
@@ -244,6 +278,8 @@ func validCreateProductInput() CreateProductInput {
 		RequestID:      "request_1",
 		CreatedAt:      time.Date(2026, 5, 1, 12, 0, 0, 0, time.FixedZone("BRT", -3*60*60)),
 	}
+	input.Variants[0].Photo = input.Photo
+	return input
 }
 
 func validAccountContext() AccountContext {

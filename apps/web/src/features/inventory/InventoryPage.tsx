@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
+import type { UseFormReturn } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react'
 import type { TranslationKey } from 'i18n'
 import { z } from 'zod'
 
+import { ApiError } from '@/shared/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -58,7 +60,19 @@ type InventoryPageProps = {
 type InventoryProductFormValues = {
   name: string
   category: InventoryCategory
-  variants: InventoryVariantFormValues[]
+  variants: InventoryColourFormValues[]
+}
+
+type InventoryColourFormValues = {
+  colour: string
+  priceAmount: number
+  costAmount: number
+  sizes: InventorySizeStockFormValues[]
+}
+
+type InventorySizeStockFormValues = {
+  size: InventorySize
+  quantity: number
 }
 
 type InventoryProductEditFormValues = {
@@ -106,16 +120,7 @@ const inventoryCategories: InventoryCategory[] = [
   'accessory'
 ]
 
-const inventorySizes: InventorySize[] = [
-  'not_applicable',
-  'one_size',
-  'pp',
-  'p',
-  'm',
-  'g',
-  'gg',
-  'xgg'
-]
+const clothingSizes: InventorySize[] = ['pp', 'p', 'm', 'g', 'gg', 'xgg']
 
 const inventoryProductSchema = z.object({
   name: z.string().trim().min(1),
@@ -133,11 +138,17 @@ const inventoryProductSchema = z.object({
   variants: z
     .array(
       z.object({
-        size: z.enum(['not_applicable', 'one_size', 'pp', 'p', 'm', 'g', 'gg', 'xgg']),
-        colour: z.string(),
+        colour: z.string().trim().min(1),
         priceAmount: z.number().finite().min(0),
         costAmount: z.number().finite().min(0),
-        quantity: z.number().int().min(0)
+        sizes: z
+          .array(
+            z.object({
+              size: z.enum(['not_applicable', 'one_size', 'pp', 'p', 'm', 'g', 'gg', 'xgg']),
+              quantity: z.number().int().min(0)
+            })
+          )
+          .min(1)
       })
     )
     .min(1)
@@ -160,7 +171,7 @@ const inventoryProductEditSchema = z.object({
 
 const inventoryVariantEditSchema = z.object({
   size: z.enum(['not_applicable', 'one_size', 'pp', 'p', 'm', 'g', 'gg', 'xgg']),
-  colour: z.string(),
+  colour: z.string().trim().min(1),
   priceAmount: z.number().finite().min(0),
   costAmount: z.number().finite().min(0),
   quantity: z.number().int().min(0)
@@ -186,14 +197,24 @@ type InventoryVariantSelection = {
   variant: InventoryVariant
 }
 
+type InventoryColourGroup = {
+  id: string
+  colour: string
+  photo: InventoryPhoto
+  sizes: InventoryVariant[]
+}
+
 export function InventoryPage(props: InventoryPageProps) {
   const queryClient = useQueryClient()
   const [formStatus, setFormStatus] = useState<string>('')
-  const [photoState, setPhotoState] = useState<PhotoFormState>({ status: 'empty' })
-  const [previewURL, setPreviewURL] = useState<string>('')
+  const [photoStates, setPhotoStates] = useState<Record<string, PhotoFormState>>({})
+  const [previewURLs, setPreviewURLs] = useState<Record<string, string>>({})
+  const [photoUploadPending, setPhotoUploadPending] = useState<boolean>(false)
+  const previewURLsRef = useRef<Record<string, string>>({})
   const [editingProductID, setEditingProductID] = useState<string>('')
   const [editingVariantID, setEditingVariantID] = useState<string>('')
   const [addingVariantProductID, setAddingVariantProductID] = useState<string>('')
+  const [createPanelOpen, setCreatePanelOpen] = useState<boolean | null>(null)
 
   const accountQuery = useQuery({
     queryKey: ['account', 'current', props.accessToken],
@@ -213,19 +234,23 @@ export function InventoryPage(props: InventoryPageProps) {
     control: form.control,
     name: 'variants'
   })
+  const categoryField = form.register('category', { required: true })
+  const createCategory = form.watch('category')
 
   const createMutation = useMutation({
     mutationFn: (request: CreateInventoryProductRequest) =>
       createInventoryProduct(props.accessToken, request),
     onSuccess: () => {
       form.reset(createInitialProductValues())
-      setPhotoState({ status: 'empty' })
-      setPreviewURL('')
+      Object.values(previewURLsRef.current).forEach(URL.revokeObjectURL)
+      setPhotoStates({})
+      setPreviewURLs({})
+      setCreatePanelOpen(false)
       setFormStatus(props.translate('inventory.createSuccess'))
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
@@ -238,7 +263,7 @@ export function InventoryPage(props: InventoryPageProps) {
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
@@ -251,7 +276,7 @@ export function InventoryPage(props: InventoryPageProps) {
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
@@ -263,7 +288,7 @@ export function InventoryPage(props: InventoryPageProps) {
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
@@ -276,7 +301,7 @@ export function InventoryPage(props: InventoryPageProps) {
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
@@ -288,47 +313,72 @@ export function InventoryPage(props: InventoryPageProps) {
       void queryClient.invalidateQueries({ queryKey: ['inventory', props.accessToken] })
     },
     onError: (error) => {
-      setFormStatus(error instanceof Error ? error.message : props.translate('inventory.error'))
+      setFormStatus(inventoryMutationMessage(error, props.translate))
     }
   })
 
   useEffect(() => {
-    return () => {
-      if (previewURL !== '') {
-        URL.revokeObjectURL(previewURL)
-      }
-    }
-  }, [previewURL])
+    previewURLsRef.current = previewURLs
+  }, [previewURLs])
+
+  useEffect(
+    () => () => {
+      Object.values(previewURLsRef.current).forEach(URL.revokeObjectURL)
+    },
+    []
+  )
 
   const account = accountQuery.data
   const products = inventoryQuery.data
   const canMutate = account?.activeBand.canWrite === true
+  const showCreatePanel = createPanelOpen ?? products?.length === 0
   const editingProduct = findProductByID(products, editingProductID)
   const editingVariant = findInventoryVariant(products, editingVariantID)
   const addingVariantProduct = findProductByID(products, addingVariantProductID)
-  const createPending = createMutation.isPending || photoState.status === 'processing'
+  const createPending =
+    createMutation.isPending ||
+    photoUploadPending ||
+    Object.values(photoStates).some((photoState) => photoState.status === 'processing')
   const productMutationPending = updateProductMutation.isPending || deleteProductMutation.isPending
   const variantMutationPending =
-    createVariantMutation.isPending || updateVariantMutation.isPending || deleteVariantMutation.isPending
+    createVariantMutation.isPending ||
+    updateVariantMutation.isPending ||
+    deleteVariantMutation.isPending
 
-  async function handlePhotoChange(fileList: FileList | null): Promise<void> {
+  async function handlePhotoChange(fieldID: string, fileList: FileList | null): Promise<void> {
     const file = fileList?.[0]
     if (file === null || file === undefined) {
-      setPhotoState({ status: 'empty' })
+      setPhotoStates((current) => ({ ...current, [fieldID]: { status: 'empty' } }))
       return
     }
 
     setFormStatus('')
-    setPhotoState({ status: 'processing', fileName: file.name })
+    setPhotoStates((current) => ({
+      ...current,
+      [fieldID]: { status: 'processing', fileName: file.name }
+    }))
     try {
       const photo = await processInventoryPhoto(file)
-      setPhotoState({ status: 'ready', fileName: file.name, photo })
-      setPreviewURL(URL.createObjectURL(photo.display.blob))
+      const oldPreviewURL = previewURLsRef.current[fieldID]
+      if (oldPreviewURL !== undefined) {
+        URL.revokeObjectURL(oldPreviewURL)
+      }
+      setPhotoStates((current) => ({
+        ...current,
+        [fieldID]: { status: 'ready', fileName: file.name, photo }
+      }))
+      setPreviewURLs((current) => ({
+        ...current,
+        [fieldID]: URL.createObjectURL(photo.display.blob)
+      }))
     } catch {
-      setPhotoState({
-        status: 'failed',
-        message: props.translate('inventory.photoInvalid')
-      })
+      setPhotoStates((current) => ({
+        ...current,
+        [fieldID]: {
+          status: 'failed',
+          message: props.translate('inventory.photoInvalid')
+        }
+      }))
     }
   }
 
@@ -340,37 +390,85 @@ export function InventoryPage(props: InventoryPageProps) {
       return
     }
 
-    if (photoState.status !== 'ready') {
-      setFormStatus(props.translate('inventory.photoRequired'))
-      return
+    const colourKeys = new Set<string>()
+    for (const colour of parsedValues.data.variants) {
+      const normalizedColour = colour.colour.trim().toLowerCase().replace(/\s+/g, ' ')
+      if (
+        colourKeys.has(normalizedColour) ||
+        new Set(colour.sizes.map((stock) => stock.size)).size !== colour.sizes.length
+      ) {
+        setFormStatus(props.translate('inventory.formInvalid'))
+        return
+      }
+      colourKeys.add(normalizedColour)
+      const sized =
+        parsedValues.data.category === 'shirt' || parsedValues.data.category === 'hoodie'
+      if (
+        colour.sizes.some((stock) =>
+          sized
+            ? stock.size === 'not_applicable' || stock.size === 'one_size'
+            : stock.size !== 'not_applicable'
+        )
+      ) {
+        setFormStatus(props.translate('inventory.formInvalid'))
+        return
+      }
     }
 
-    let uploadRequest: InventoryPhotoUploadResponse
+    const uploadedPhotos: InventoryPhotoManifest[] = []
+    setPhotoUploadPending(true)
     try {
-      uploadRequest = await createInventoryPhotoUploadRequest(props.accessToken, {
-        full: toPhotoUploadVariantRequest(photoState.photo.full),
-        display: toPhotoUploadVariantRequest(photoState.photo.display)
-      })
-    } catch {
-      setFormStatus(props.translate('inventory.photoUploadRequestFailed'))
-      return
+      for (const [index] of parsedValues.data.variants.entries()) {
+        const fieldID = variantFields.fields[index]?.id
+        const photoState = fieldID === undefined ? undefined : photoStates[fieldID]
+        if (photoState?.status !== 'ready') {
+          setFormStatus(props.translate('inventory.photoRequired'))
+          return
+        }
+        let uploadRequest: InventoryPhotoUploadResponse
+        try {
+          uploadRequest = await createInventoryPhotoUploadRequest(props.accessToken, {
+            full: toPhotoUploadVariantRequest(photoState.photo.full),
+            display: toPhotoUploadVariantRequest(photoState.photo.display)
+          })
+        } catch {
+          setFormStatus(props.translate('inventory.photoUploadRequestFailed'))
+          return
+        }
+        try {
+          await Promise.all([
+            uploadInventoryPhotoVariant(uploadRequest.uploads.full, photoState.photo.full.blob),
+            uploadInventoryPhotoVariant(
+              uploadRequest.uploads.display,
+              photoState.photo.display.blob
+            )
+          ])
+        } catch {
+          setFormStatus(props.translate('inventory.photoUploadFailed'))
+          return
+        }
+        uploadedPhotos.push(toPhotoManifest(uploadRequest.photo))
+      }
+    } finally {
+      setPhotoUploadPending(false)
     }
 
-    try {
-      await Promise.all([
-        uploadInventoryPhotoVariant(uploadRequest.uploads.full, photoState.photo.full.blob),
-        uploadInventoryPhotoVariant(uploadRequest.uploads.display, photoState.photo.display.blob)
-      ])
-    } catch {
-      setFormStatus(props.translate('inventory.photoUploadFailed'))
-      return
-    }
-
+    const variants: InventoryVariantRequest[] = parsedValues.data.variants.flatMap(
+      (colour, index) =>
+        colour.sizes.map((stock) => ({
+          size: stock.size,
+          colour: colour.colour.trim(),
+          photo: uploadedPhotos[index],
+          price: { amount: amountToCents(colour.priceAmount), currency: 'BRL' },
+          cost: { amount: amountToCents(colour.costAmount), currency: 'BRL' },
+          quantity: stock.quantity
+        }))
+    )
     createMutation.mutate({
       name: parsedValues.data.name.trim(),
       category: parsedValues.data.category,
-      photo: toPhotoManifest(uploadRequest.photo),
-      variants: parsedValues.data.variants.map(toVariantRequest)
+      photo: uploadedPhotos[0],
+      variants
     })
   }
 
@@ -404,7 +502,11 @@ export function InventoryPage(props: InventoryPageProps) {
     deleteProductMutation.mutate(product.id)
   }
 
-  function handleCreateVariant(product: InventoryProduct, values: InventoryVariantFormValues): void {
+  async function handleCreateVariant(
+    product: InventoryProduct,
+    values: InventoryVariantFormValues,
+    file: File | null
+  ): Promise<void> {
     setFormStatus('')
     const parsedValues = inventoryVariantEditSchema.safeParse(values)
     if (!parsedValues.success) {
@@ -412,16 +514,39 @@ export function InventoryPage(props: InventoryPageProps) {
       return
     }
 
-    createVariantMutation.mutate({
-      productID: product.id,
-      request: toVariantRequest(parsedValues.data)
-    })
+    const existingColour = product.variants.find(
+      (variant) => normalizeColour(variant.colour) === normalizeColour(parsedValues.data.colour)
+    )
+    let photo: InventoryPhotoManifest
+    if (existingColour !== undefined) {
+      photo = toPhotoManifest(existingColour.photo)
+    } else {
+      if (file === null) {
+        setFormStatus(props.translate('inventory.photoRequired'))
+        return
+      }
+      try {
+        photo = await uploadPhotoFile(props.accessToken, file)
+      } catch (error) {
+        setFormStatus(
+          error instanceof Error ? error.message : props.translate('inventory.photoUploadFailed')
+        )
+        return
+      }
+    }
+    const request = toVariantRequest(parsedValues.data, photo)
+    if (existingColour !== undefined) {
+      request.price = existingColour.price
+      request.cost = existingColour.cost
+    }
+    createVariantMutation.mutate({ productID: product.id, request })
   }
 
-  function handleUpdateVariant(
+  async function handleUpdateVariant(
     selection: InventoryVariantSelection,
-    values: InventoryVariantEditFormValues
-  ): void {
+    values: InventoryVariantEditFormValues,
+    file: File | null
+  ): Promise<void> {
     setFormStatus('')
     const parsedValues = inventoryVariantEditSchema.safeParse(values)
     if (!parsedValues.success) {
@@ -429,9 +554,20 @@ export function InventoryPage(props: InventoryPageProps) {
       return
     }
 
+    let photo = toPhotoManifest(selection.variant.photo)
+    if (file !== null) {
+      try {
+        photo = await uploadPhotoFile(props.accessToken, file)
+      } catch (error) {
+        setFormStatus(
+          error instanceof Error ? error.message : props.translate('inventory.photoUploadFailed')
+        )
+        return
+      }
+    }
     updateVariantMutation.mutate({
       variantID: selection.variant.id,
-      request: toVariantRequest(parsedValues.data)
+      request: toVariantRequest(parsedValues.data, photo)
     })
   }
 
@@ -461,17 +597,42 @@ export function InventoryPage(props: InventoryPageProps) {
     <section className="grid gap-ui-32">
       <header className="flex flex-wrap items-start justify-between gap-ui-16">
         <div className="grid gap-ui-8">
-          <h2 className="m-0 text-[1.75rem] leading-[1.15]">
-            {props.translate('nav.inventory')}
-          </h2>
+          <h2 className="m-0 text-[1.75rem] leading-[1.15]">{props.translate('nav.inventory')}</h2>
           <p className="m-0 text-base text-white-300">
             {props.translate('inventory.productCount')}: {products.length}
           </p>
         </div>
+        {canMutate ? (
+          <Button
+            type="button"
+            variant="outline"
+            aria-expanded={showCreatePanel}
+            aria-controls="inventory-create-panel"
+            onClick={() => setCreatePanelOpen(!showCreatePanel)}
+          >
+            {showCreatePanel ? (
+              <ChevronUp aria-hidden="true" />
+            ) : (
+              <ChevronDown aria-hidden="true" />
+            )}
+            {props.translate('inventory.addProduct')}
+          </Button>
+        ) : null}
       </header>
 
+      {formStatus === '' ? null : (
+        <p className="m-0 text-sm text-white-300" role="status">
+          {formStatus}
+        </p>
+      )}
+
       {canMutate ? (
-        <Card aria-labelledby="inventory-create-title">
+        <Card
+          id="inventory-create-panel"
+          aria-labelledby="inventory-create-title"
+          hidden={!showCreatePanel}
+          className={showCreatePanel ? undefined : 'hidden'}
+        >
           <CardHeader>
             <h3 id="inventory-create-title" className="m-0 text-base leading-tight">
               {props.translate('inventory.createTitle')}
@@ -502,7 +663,16 @@ export function InventoryPage(props: InventoryPageProps) {
                   <select
                     id="inventory-product-category"
                     className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
-                    {...form.register('category', { required: true })}
+                    {...categoryField}
+                    onChange={(event) => {
+                      void categoryField.onChange(event)
+                      const category = event.currentTarget.value as InventoryCategory
+                      variantFields.fields.forEach((_, index) => {
+                        form.setValue(`variants.${index}.sizes`, [
+                          createInitialSizeStockValues(category)
+                        ])
+                      })
+                    }}
                   >
                     {inventoryCategories.map((category) => (
                       <option key={category} value={category}>
@@ -513,30 +683,6 @@ export function InventoryPage(props: InventoryPageProps) {
                 </div>
               </div>
 
-              <div className="grid gap-ui-12">
-                <Label htmlFor="inventory-product-photo">
-                  {props.translate('inventory.photoLabel')}
-                </Label>
-                <div className="grid gap-ui-12 min-[800px]:grid-cols-[minmax(0,1fr)_160px]">
-                  <Input
-                    id="inventory-product-photo"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={(event) => {
-                      void handlePhotoChange(event.currentTarget.files)
-                    }}
-                  />
-                  {previewURL === '' ? null : (
-                    <img
-                      src={previewURL}
-                      alt={props.translate('inventory.photoPreviewAlt')}
-                      className="h-[120px] w-[160px] rounded-md border border-border bg-muted object-cover"
-                    />
-                  )}
-                </div>
-                <PhotoStatus photoState={photoState} translate={props.translate} />
-              </div>
-
               <div className="grid gap-ui-16">
                 <div className="flex items-center justify-between gap-ui-16">
                   <h3 className="m-0 text-base leading-tight">
@@ -545,7 +691,7 @@ export function InventoryPage(props: InventoryPageProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => variantFields.append(createInitialVariantValues())}
+                    onClick={() => variantFields.append(createInitialColourValues(createCategory))}
                   >
                     <Plus aria-hidden="true" />
                     {props.translate('inventory.addVariant')}
@@ -554,95 +700,33 @@ export function InventoryPage(props: InventoryPageProps) {
 
                 <div className="grid gap-ui-16">
                   {variantFields.fields.map((field, index) => (
-                    <div
+                    <ColourVariantCreateFields
                       key={field.id}
-                      className="grid gap-ui-12 rounded-md border border-border p-ui-12 min-[900px]:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]"
-                    >
-                      <div className="grid gap-ui-8">
-                        <Label htmlFor={`inventory-variant-size-${field.id}`}>
-                          {props.translate('inventory.sizeLabel')}
-                        </Label>
-                        <select
-                          id={`inventory-variant-size-${field.id}`}
-                          className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
-                          {...form.register(`variants.${index}.size`, { required: true })}
-                        >
-                          {inventorySizes.map((size) => (
-                            <option key={size} value={size}>
-                              {props.translate(sizeLabelKey(size))}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="grid gap-ui-8">
-                        <Label htmlFor={`inventory-variant-colour-${field.id}`}>
-                          {props.translate('inventory.colourLabel')}
-                        </Label>
-                        <Input
-                          id={`inventory-variant-colour-${field.id}`}
-                          {...form.register(`variants.${index}.colour`)}
-                        />
-                      </div>
-
-                      <div className="grid gap-ui-8">
-                        <Label htmlFor={`inventory-variant-price-${field.id}`}>
-                          {props.translate('inventory.priceLabel')}
-                        </Label>
-                        <Input
-                          id={`inventory-variant-price-${field.id}`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...form.register(`variants.${index}.priceAmount`, {
-                            valueAsNumber: true
-                          })}
-                        />
-                      </div>
-
-                      <div className="grid gap-ui-8">
-                        <Label htmlFor={`inventory-variant-cost-${field.id}`}>
-                          {props.translate('inventory.costLabel')}
-                        </Label>
-                        <Input
-                          id={`inventory-variant-cost-${field.id}`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...form.register(`variants.${index}.costAmount`, {
-                            valueAsNumber: true
-                          })}
-                        />
-                      </div>
-
-                      <div className="grid gap-ui-8">
-                        <Label htmlFor={`inventory-variant-quantity-${field.id}`}>
-                          {props.translate('inventory.quantityLabel')}
-                        </Label>
-                        <Input
-                          id={`inventory-variant-quantity-${field.id}`}
-                          type="number"
-                          step="1"
-                          min="0"
-                          {...form.register(`variants.${index}.quantity`, {
-                            valueAsNumber: true
-                          })}
-                        />
-                      </div>
-
-                      <div className="flex items-end">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          aria-label={props.translate('inventory.removeVariant')}
-                          disabled={variantFields.fields.length === 1}
-                          onClick={() => variantFields.remove(index)}
-                        >
-                          <Trash2 aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </div>
+                      fieldID={field.id}
+                      index={index}
+                      form={form}
+                      category={createCategory}
+                      translate={props.translate}
+                      photoState={photoStates[field.id] ?? { status: 'empty' }}
+                      previewURL={previewURLs[field.id] ?? ''}
+                      canRemove={variantFields.fields.length > 1}
+                      onPhotoChange={(files) => void handlePhotoChange(field.id, files)}
+                      onRemove={() => {
+                        const previewURL = previewURLsRef.current[field.id]
+                        if (previewURL !== undefined) URL.revokeObjectURL(previewURL)
+                        setPhotoStates((current) =>
+                          Object.fromEntries(
+                            Object.entries(current).filter(([key]) => key !== field.id)
+                          )
+                        )
+                        setPreviewURLs((current) =>
+                          Object.fromEntries(
+                            Object.entries(current).filter(([key]) => key !== field.id)
+                          )
+                        )
+                        variantFields.remove(index)
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -652,11 +736,6 @@ export function InventoryPage(props: InventoryPageProps) {
                   <Save aria-hidden="true" />
                   {props.translate('inventory.createSubmit')}
                 </Button>
-                {formStatus === '' ? null : (
-                  <p className="m-0 text-sm text-white-300" role="status">
-                    {formStatus}
-                  </p>
-                )}
               </div>
             </form>
           </CardContent>
@@ -724,6 +803,165 @@ export function InventoryPage(props: InventoryPageProps) {
   )
 }
 
+function ColourVariantCreateFields(props: {
+  fieldID: string
+  index: number
+  form: UseFormReturn<InventoryProductFormValues>
+  category: InventoryCategory
+  translate: Translate
+  photoState: PhotoFormState
+  previewURL: string
+  canRemove: boolean
+  onPhotoChange: (files: FileList | null) => void
+  onRemove: () => void
+}) {
+  const stockFields = useFieldArray({
+    control: props.form.control,
+    name: `variants.${props.index}.sizes` as const
+  })
+  const sized = props.category === 'shirt' || props.category === 'hoodie'
+
+  return (
+    <div className="grid gap-ui-16 rounded-md border border-border p-ui-16">
+      <div className="grid gap-ui-12 min-[900px]:grid-cols-[1fr_1fr_1fr_auto]">
+        <div className="grid gap-ui-8">
+          <Label htmlFor={`inventory-variant-colour-${props.fieldID}`}>
+            {props.translate('inventory.colourLabel')}
+          </Label>
+          <Input
+            id={`inventory-variant-colour-${props.fieldID}`}
+            {...props.form.register(`variants.${props.index}.colour`, { required: true })}
+          />
+        </div>
+        <div className="grid gap-ui-8">
+          <Label htmlFor={`inventory-variant-price-${props.fieldID}`}>
+            {props.translate('inventory.priceLabel')}
+          </Label>
+          <Input
+            id={`inventory-variant-price-${props.fieldID}`}
+            type="number"
+            step="0.01"
+            min="0"
+            {...props.form.register(`variants.${props.index}.priceAmount`, { valueAsNumber: true })}
+          />
+        </div>
+        <div className="grid gap-ui-8">
+          <Label htmlFor={`inventory-variant-cost-${props.fieldID}`}>
+            {props.translate('inventory.costLabel')}
+          </Label>
+          <Input
+            id={`inventory-variant-cost-${props.fieldID}`}
+            type="number"
+            step="0.01"
+            min="0"
+            {...props.form.register(`variants.${props.index}.costAmount`, { valueAsNumber: true })}
+          />
+        </div>
+        <div className="flex items-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={props.translate('inventory.removeVariant')}
+            disabled={!props.canRemove}
+            onClick={props.onRemove}
+          >
+            <Trash2 aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-ui-8">
+        <Label htmlFor={`inventory-variant-photo-${props.fieldID}`}>
+          {props.translate('inventory.photoLabel')}
+        </Label>
+        <div className="grid gap-ui-12 min-[800px]:grid-cols-[minmax(0,1fr)_160px]">
+          <Input
+            id={`inventory-variant-photo-${props.fieldID}`}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(event) => props.onPhotoChange(event.currentTarget.files)}
+          />
+          {props.previewURL === '' ? null : (
+            <img
+              src={props.previewURL}
+              alt={props.translate('inventory.photoPreviewAlt')}
+              className="h-[120px] w-[160px] rounded-md border border-border bg-muted object-cover"
+            />
+          )}
+        </div>
+        <PhotoStatus photoState={props.photoState} translate={props.translate} />
+      </div>
+
+      <div className="grid gap-ui-12">
+        <div className="flex items-center justify-between gap-ui-12">
+          <h4 className="m-0 text-sm font-semibold">{props.translate('inventory.sizesTitle')}</h4>
+          {sized ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => stockFields.append(createInitialSizeStockValues(props.category))}
+            >
+              <Plus aria-hidden="true" />
+              {props.translate('inventory.addSize')}
+            </Button>
+          ) : null}
+        </div>
+        {stockFields.fields.map((stockField, sizeIndex) => (
+          <div key={stockField.id} className="flex flex-wrap items-end gap-ui-12">
+            {sized ? (
+              <div className="grid min-w-32 gap-ui-8">
+                <Label htmlFor={`inventory-variant-size-${stockField.id}`}>
+                  {props.translate('inventory.sizeLabel')}
+                </Label>
+                <select
+                  id={`inventory-variant-size-${stockField.id}`}
+                  className="h-9 rounded-md border border-input bg-background px-ui-12 text-sm"
+                  {...props.form.register(`variants.${props.index}.sizes.${sizeIndex}.size`, {
+                    required: true
+                  })}
+                >
+                  {clothingSizes.map((size) => (
+                    <option key={size} value={size}>
+                      {props.translate(sizeLabelKey(size))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="grid min-w-32 gap-ui-8">
+              <Label htmlFor={`inventory-variant-quantity-${stockField.id}`}>
+                {props.translate('inventory.quantityLabel')}
+              </Label>
+              <Input
+                id={`inventory-variant-quantity-${stockField.id}`}
+                type="number"
+                step="1"
+                min="0"
+                {...props.form.register(`variants.${props.index}.sizes.${sizeIndex}.quantity`, {
+                  valueAsNumber: true
+                })}
+              />
+            </div>
+            {sized ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={props.translate('inventory.removeSize')}
+                disabled={stockFields.fields.length === 1}
+                onClick={() => stockFields.remove(sizeIndex)}
+              >
+                <Trash2 aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ProductEditForm(props: {
   product: InventoryProduct
   translate: Translate
@@ -786,7 +1024,12 @@ function ProductEditForm(props: {
               <Save aria-hidden="true" />
               {props.translate('inventory.updateSubmit')}
             </Button>
-            <Button type="button" variant="outline" disabled={props.disabled} onClick={props.onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={props.disabled}
+              onClick={props.onCancel}
+            >
               <X aria-hidden="true" />
               {props.translate('inventory.cancelEdit')}
             </Button>
@@ -802,11 +1045,20 @@ function VariantCreateForm(props: {
   translate: Translate
   disabled: boolean
   onCancel: () => void
-  onSubmit: (product: InventoryProduct, values: InventoryVariantFormValues) => void
+  onSubmit: (
+    product: InventoryProduct,
+    values: InventoryVariantFormValues,
+    file: File | null
+  ) => void
 }) {
+  const [file, setFile] = useState<File | null>(null)
   const form = useForm<InventoryVariantFormValues>({
-    defaultValues: createInitialVariantValues()
+    defaultValues: createInitialVariantValues(props.product.category)
   })
+  const selectedColour = form.watch('colour')
+  const existingColour = props.product.variants.find(
+    (variant) => normalizeColour(variant.colour) === normalizeColour(selectedColour)
+  )
 
   return (
     <Card aria-labelledby="inventory-create-variant-title">
@@ -819,26 +1071,28 @@ function VariantCreateForm(props: {
         <form
           className="grid gap-ui-16"
           onSubmit={(event) => {
-            void form.handleSubmit((values) => props.onSubmit(props.product, values))(event)
+            void form.handleSubmit((values) => props.onSubmit(props.product, values, file))(event)
           }}
         >
           <div className="grid gap-ui-12 min-[900px]:grid-cols-5">
-            <div className="grid gap-ui-8">
-              <Label htmlFor={`inventory-create-variant-size-${props.product.id}`}>
-                {props.translate('inventory.newVariantSizeLabel')}
-              </Label>
-              <select
-                id={`inventory-create-variant-size-${props.product.id}`}
-                className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
-                {...form.register('size', { required: true })}
-              >
-                {inventorySizes.map((size) => (
-                  <option key={size} value={size}>
-                    {props.translate(sizeLabelKey(size))}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {props.product.category === 'shirt' || props.product.category === 'hoodie' ? (
+              <div className="grid gap-ui-8">
+                <Label htmlFor={`inventory-create-variant-size-${props.product.id}`}>
+                  {props.translate('inventory.newVariantSizeLabel')}
+                </Label>
+                <select
+                  id={`inventory-create-variant-size-${props.product.id}`}
+                  className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
+                  {...form.register('size', { required: true })}
+                >
+                  {clothingSizes.map((size) => (
+                    <option key={size} value={size}>
+                      {props.translate(sizeLabelKey(size))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
             <div className="grid gap-ui-8">
               <Label htmlFor={`inventory-create-variant-colour-${props.product.id}`}>
@@ -850,31 +1104,35 @@ function VariantCreateForm(props: {
               />
             </div>
 
-            <div className="grid gap-ui-8">
-              <Label htmlFor={`inventory-create-variant-price-${props.product.id}`}>
-                {props.translate('inventory.newVariantPriceLabel')}
-              </Label>
-              <Input
-                id={`inventory-create-variant-price-${props.product.id}`}
-                type="number"
-                step="0.01"
-                min="0"
-                {...form.register('priceAmount', { valueAsNumber: true })}
-              />
-            </div>
+            {existingColour === undefined ? (
+              <div className="grid gap-ui-8">
+                <Label htmlFor={`inventory-create-variant-price-${props.product.id}`}>
+                  {props.translate('inventory.newVariantPriceLabel')}
+                </Label>
+                <Input
+                  id={`inventory-create-variant-price-${props.product.id}`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...form.register('priceAmount', { valueAsNumber: true })}
+                />
+              </div>
+            ) : null}
 
-            <div className="grid gap-ui-8">
-              <Label htmlFor={`inventory-create-variant-cost-${props.product.id}`}>
-                {props.translate('inventory.newVariantCostLabel')}
-              </Label>
-              <Input
-                id={`inventory-create-variant-cost-${props.product.id}`}
-                type="number"
-                step="0.01"
-                min="0"
-                {...form.register('costAmount', { valueAsNumber: true })}
-              />
-            </div>
+            {existingColour === undefined ? (
+              <div className="grid gap-ui-8">
+                <Label htmlFor={`inventory-create-variant-cost-${props.product.id}`}>
+                  {props.translate('inventory.newVariantCostLabel')}
+                </Label>
+                <Input
+                  id={`inventory-create-variant-cost-${props.product.id}`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...form.register('costAmount', { valueAsNumber: true })}
+                />
+              </div>
+            ) : null}
 
             <div className="grid gap-ui-8">
               <Label htmlFor={`inventory-create-variant-quantity-${props.product.id}`}>
@@ -890,12 +1148,35 @@ function VariantCreateForm(props: {
             </div>
           </div>
 
+          {existingColour === undefined ? (
+            <div className="grid gap-ui-8">
+              <Label htmlFor={`inventory-create-variant-photo-${props.product.id}`}>
+                {props.translate('inventory.photoLabel')}
+              </Label>
+              <Input
+                id={`inventory-create-variant-photo-${props.product.id}`}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)}
+              />
+            </div>
+          ) : (
+            <p className="m-0 text-sm text-white-300">
+              {props.translate('inventory.existingColourSizeNote')}
+            </p>
+          )}
+
           <div className="flex flex-wrap items-center gap-ui-16">
             <Button type="submit" disabled={props.disabled}>
               <Plus aria-hidden="true" />
               {props.translate('inventory.createVariantSubmit')}
             </Button>
-            <Button type="button" variant="outline" disabled={props.disabled} onClick={props.onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={props.disabled}
+              onClick={props.onCancel}
+            >
               <X aria-hidden="true" />
               {props.translate('inventory.cancelEdit')}
             </Button>
@@ -913,9 +1194,11 @@ function VariantEditForm(props: {
   onCancel: () => void
   onSubmit: (
     selection: InventoryVariantSelection,
-    values: InventoryVariantEditFormValues
+    values: InventoryVariantEditFormValues,
+    file: File | null
   ) => void
 }) {
+  const [file, setFile] = useState<File | null>(null)
   const form = useForm<InventoryVariantEditFormValues>({
     defaultValues: toVariantFormValues(props.selection.variant)
   })
@@ -931,26 +1214,29 @@ function VariantEditForm(props: {
         <form
           className="grid gap-ui-16"
           onSubmit={(event) => {
-            void form.handleSubmit((values) => props.onSubmit(props.selection, values))(event)
+            void form.handleSubmit((values) => props.onSubmit(props.selection, values, file))(event)
           }}
         >
           <div className="grid gap-ui-12 min-[900px]:grid-cols-5">
-            <div className="grid gap-ui-8">
-              <Label htmlFor={`inventory-edit-variant-size-${props.selection.variant.id}`}>
-                {props.translate('inventory.editVariantSizeLabel')}
-              </Label>
-              <select
-                id={`inventory-edit-variant-size-${props.selection.variant.id}`}
-                className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
-                {...form.register('size', { required: true })}
-              >
-                {inventorySizes.map((size) => (
-                  <option key={size} value={size}>
-                    {props.translate(sizeLabelKey(size))}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {props.selection.product.category === 'shirt' ||
+            props.selection.product.category === 'hoodie' ? (
+              <div className="grid gap-ui-8">
+                <Label htmlFor={`inventory-edit-variant-size-${props.selection.variant.id}`}>
+                  {props.translate('inventory.editVariantSizeLabel')}
+                </Label>
+                <select
+                  id={`inventory-edit-variant-size-${props.selection.variant.id}`}
+                  className="h-9 w-full rounded-md border border-input bg-background px-ui-12 text-sm"
+                  {...form.register('size', { required: true })}
+                >
+                  {clothingSizes.map((size) => (
+                    <option key={size} value={size}>
+                      {props.translate(sizeLabelKey(size))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
 
             <div className="grid gap-ui-8">
               <Label htmlFor={`inventory-edit-variant-colour-${props.selection.variant.id}`}>
@@ -1002,12 +1288,29 @@ function VariantEditForm(props: {
             </div>
           </div>
 
+          <div className="grid gap-ui-8">
+            <Label htmlFor={`inventory-edit-variant-photo-${props.selection.variant.id}`}>
+              {props.translate('inventory.photoLabel')}
+            </Label>
+            <Input
+              id={`inventory-edit-variant-photo-${props.selection.variant.id}`}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)}
+            />
+          </div>
+
           <div className="flex flex-wrap items-center gap-ui-16">
             <Button type="submit" disabled={props.disabled}>
               <Save aria-hidden="true" />
               {props.translate('inventory.updateVariantSubmit')}
             </Button>
-            <Button type="button" variant="outline" disabled={props.disabled} onClick={props.onCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={props.disabled}
+              onClick={props.onCancel}
+            >
               <X aria-hidden="true" />
               {props.translate('inventory.cancelEdit')}
             </Button>
@@ -1072,7 +1375,9 @@ function InventoryList(props: {
           <TableHead>{props.translate('inventory.variantsHeader')}</TableHead>
           <TableHead>{props.translate('inventory.stockHeader')}</TableHead>
           <TableHead>{props.translate('inventory.statusHeader')}</TableHead>
-          {props.canMutate ? <TableHead>{props.translate('inventory.actionsHeader')}</TableHead> : null}
+          {props.canMutate ? (
+            <TableHead>{props.translate('inventory.actionsHeader')}</TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -1080,61 +1385,78 @@ function InventoryList(props: {
           <TableRow key={product.id}>
             <TableCell>
               <div className="flex items-center gap-ui-12">
-                <img
-                  src={product.photo.display.publicUrl}
-                  alt={product.name}
-                  className="h-12 w-16 rounded-md border border-border bg-muted object-cover"
-                />
                 <span className="font-medium text-white-100">{product.name}</span>
               </div>
             </TableCell>
             <TableCell>{props.translate(categoryLabelKey(product.category))}</TableCell>
             <TableCell>
               <div className="grid gap-ui-8">
-                <span>{variantCountLabel(product.variants.length, props.translate)}</span>
-                {product.variants.map((variant) => {
-                  const selection: InventoryVariantSelection = { product, variant }
-                  const label = variantLabel(variant, props.translate)
-                  return (
-                    <div key={variant.id} className="flex flex-wrap items-center gap-ui-8 text-sm">
-                      <span>{label}</span>
-                      <span className="text-white-300">
-                        {variantStockLabel(variant, props.translate)}
-                      </span>
-                      {props.canMutate ? (
-                        <div className="flex items-center gap-ui-4">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            aria-label={`${props.translate('inventory.editVariant')} ${product.name} ${label}`}
-                            disabled={props.variantMutationPending}
-                            onClick={() => props.onEditVariant(selection)}
-                          >
-                            <Pencil aria-hidden="true" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            aria-label={`${props.translate('inventory.deleteVariant')} ${product.name} ${label}`}
-                            title={
-                              product.variants.length === 1
-                                ? props.translate('inventory.lastVariantDeleteDisabled')
-                                : undefined
-                            }
-                            disabled={
-                              props.variantMutationPending || product.variants.length === 1
-                            }
-                            onClick={() => props.onDeleteVariant(selection)}
-                          >
-                            <Trash2 aria-hidden="true" />
-                          </Button>
-                        </div>
-                      ) : null}
+                <span>
+                  {variantCountLabel(
+                    groupInventoryVariants(product.variants).length,
+                    props.translate
+                  )}
+                </span>
+                {groupInventoryVariants(product.variants).map((group) => (
+                  <div
+                    key={group.id}
+                    className="grid gap-ui-8 rounded-md border border-border p-ui-8 text-sm"
+                  >
+                    <div className="flex items-center gap-ui-8">
+                      <img
+                        src={group.photo.display.publicUrl}
+                        alt={`${product.name} ${group.colour}`}
+                        className="h-12 w-16 rounded-md border border-border bg-muted object-cover"
+                      />
+                      <span className="font-medium">{group.colour}</span>
                     </div>
-                  )
-                })}
+                    {group.sizes.map((variant) => {
+                      const selection: InventoryVariantSelection = { product, variant }
+                      const label = variantLabel(variant, props.translate)
+                      return (
+                        <div key={variant.id} className="flex flex-wrap items-center gap-ui-8">
+                          {product.category === 'shirt' || product.category === 'hoodie' ? (
+                            <span>{props.translate(sizeLabelKey(variant.size))}</span>
+                          ) : null}
+                          <span className="text-white-300">
+                            {variantStockLabel(variant, props.translate)}
+                          </span>
+                          {props.canMutate ? (
+                            <div className="flex items-center gap-ui-4">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                aria-label={`${props.translate('inventory.editVariant')} ${product.name} ${label}`}
+                                disabled={props.variantMutationPending}
+                                onClick={() => props.onEditVariant(selection)}
+                              >
+                                <Pencil aria-hidden="true" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                aria-label={`${props.translate('inventory.deleteVariant')} ${product.name} ${label}`}
+                                title={
+                                  product.variants.length === 1
+                                    ? props.translate('inventory.lastVariantDeleteDisabled')
+                                    : undefined
+                                }
+                                disabled={
+                                  props.variantMutationPending || product.variants.length === 1
+                                }
+                                onClick={() => props.onDeleteVariant(selection)}
+                              >
+                                <Trash2 aria-hidden="true" />
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
               </div>
             </TableCell>
             <TableCell>{totalStock(product)}</TableCell>
@@ -1200,13 +1522,29 @@ function createInitialProductValues(): InventoryProductFormValues {
   return {
     name: '',
     category: 'shirt',
-    variants: [createInitialVariantValues()]
+    variants: [createInitialColourValues('shirt')]
   }
 }
 
-function createInitialVariantValues(): InventoryVariantFormValues {
+function createInitialColourValues(category: InventoryCategory): InventoryColourFormValues {
   return {
-    size: 'm',
+    colour: '',
+    priceAmount: 0,
+    costAmount: 0,
+    sizes: [createInitialSizeStockValues(category)]
+  }
+}
+
+function createInitialSizeStockValues(category: InventoryCategory): InventorySizeStockFormValues {
+  return {
+    size: category === 'shirt' || category === 'hoodie' ? 'm' : 'not_applicable',
+    quantity: 0
+  }
+}
+
+function createInitialVariantValues(category: InventoryCategory): InventoryVariantFormValues {
+  return {
+    size: category === 'shirt' || category === 'hoodie' ? 'm' : 'not_applicable',
     colour: '',
     priceAmount: 0,
     costAmount: 0,
@@ -1244,10 +1582,14 @@ function toPhotoManifest(photo: InventoryPhoto): InventoryPhotoManifest {
   }
 }
 
-function toVariantRequest(values: InventoryVariantFormValues): InventoryVariantRequest {
+function toVariantRequest(
+  values: InventoryVariantFormValues,
+  photo: InventoryPhotoManifest
+): InventoryVariantRequest {
   return {
     size: values.size,
     colour: values.colour.trim(),
+    photo,
     price: {
       amount: amountToCents(values.priceAmount),
       currency: 'BRL'
@@ -1258,6 +1600,23 @@ function toVariantRequest(values: InventoryVariantFormValues): InventoryVariantR
     },
     quantity: values.quantity
   }
+}
+
+async function uploadPhotoFile(accessToken: string, file: File): Promise<InventoryPhotoManifest> {
+  const photo = await processInventoryPhoto(file)
+  const uploadRequest = await createInventoryPhotoUploadRequest(accessToken, {
+    full: toPhotoUploadVariantRequest(photo.full),
+    display: toPhotoUploadVariantRequest(photo.display)
+  })
+  await Promise.all([
+    uploadInventoryPhotoVariant(uploadRequest.uploads.full, photo.full.blob),
+    uploadInventoryPhotoVariant(uploadRequest.uploads.display, photo.display.blob)
+  ])
+  return toPhotoManifest(uploadRequest.photo)
+}
+
+function normalizeColour(colour: string): string {
+  return colour.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 function toVariantFormValues(variant: InventoryVariant): InventoryVariantEditFormValues {
@@ -1274,15 +1633,44 @@ function amountToCents(value: number): number {
   return Math.round(value * 100)
 }
 
+function inventoryMutationMessage(error: unknown, translate: Translate): string {
+  if (error instanceof ApiError) {
+    if (error.code === 'duplicate_product') return translate('inventory.duplicateProduct')
+    if (error.code === 'duplicate_variant') return translate('inventory.duplicateVariant')
+  }
+  return error instanceof Error ? error.message : translate('inventory.error')
+}
+
 function totalStock(product: InventoryProduct): number {
   return product.variants.reduce((total, variant) => total + variant.quantity, 0)
+}
+
+function groupInventoryVariants(variants: InventoryVariant[]): InventoryColourGroup[] {
+  const groups = new Map<string, InventoryColourGroup>()
+  for (const variant of variants) {
+    const existing = groups.get(variant.colourVariantId)
+    if (existing === undefined) {
+      groups.set(variant.colourVariantId, {
+        id: variant.colourVariantId,
+        colour: variant.colour,
+        photo: variant.photo,
+        sizes: [variant]
+      })
+    } else {
+      existing.sizes.push(variant)
+    }
+  }
+  return Array.from(groups.values())
 }
 
 function isSoldOut(product: InventoryProduct): boolean {
   return totalStock(product) === 0
 }
 
-function findProductByID(products: InventoryProduct[] | undefined, productID: string): InventoryProduct | undefined {
+function findProductByID(
+  products: InventoryProduct[] | undefined,
+  productID: string
+): InventoryProduct | undefined {
   if (products === undefined || productID === '') {
     return undefined
   }

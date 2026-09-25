@@ -33,17 +33,18 @@ type BoothItemsResponse struct {
 }
 
 type BoothItemResponse struct {
-	ProductID   string        `json:"productId"`
-	VariantID   string        `json:"variantId"`
-	ProductName string        `json:"productName"`
-	Category    string        `json:"category"`
-	Size        string        `json:"size"`
-	Colour      string        `json:"colour"`
-	Price       MoneyResponse `json:"price"`
-	Cost        MoneyResponse `json:"cost"`
-	Quantity    int           `json:"quantity"`
-	SoldOut     bool          `json:"soldOut"`
-	Photo       PhotoResponse `json:"photo"`
+	ProductID       string        `json:"productId"`
+	VariantID       string        `json:"variantId"`
+	ColourVariantID string        `json:"colourVariantId"`
+	ProductName     string        `json:"productName"`
+	Category        string        `json:"category"`
+	Size            string        `json:"size"`
+	Colour          string        `json:"colour"`
+	Price           MoneyResponse `json:"price"`
+	Cost            MoneyResponse `json:"cost"`
+	Quantity        int           `json:"quantity"`
+	SoldOut         bool          `json:"soldOut"`
+	Photo           PhotoResponse `json:"photo"`
 }
 
 type CashCheckoutRequest struct {
@@ -458,17 +459,18 @@ func toBoothItemResponses(photoStorage applicationinventory.PhotoStorage, items 
 	responses := make([]BoothItemResponse, 0, len(items))
 	for _, item := range items {
 		responses = append(responses, BoothItemResponse{
-			ProductID:   item.ProductID,
-			VariantID:   item.VariantID,
-			ProductName: item.ProductName,
-			Category:    string(item.Category),
-			Size:        string(item.Size),
-			Colour:      item.Colour,
-			Price:       toMoneyResponse(item.Price.Amount, item.Price.Currency),
-			Cost:        toMoneyResponse(item.Cost.Amount, item.Cost.Currency),
-			Quantity:    item.Quantity,
-			SoldOut:     item.SoldOut,
-			Photo:       toPhotoResponse(photoStorage, item.Photo),
+			ProductID:       item.ProductID,
+			VariantID:       item.VariantID,
+			ColourVariantID: item.ColourVariantID,
+			ProductName:     item.ProductName,
+			Category:        string(item.Category),
+			Size:            string(item.Size),
+			Colour:          item.Colour,
+			Price:           toMoneyResponse(item.Price.Amount, item.Price.Currency),
+			Cost:            toMoneyResponse(item.Cost.Amount, item.Cost.Currency),
+			Quantity:        item.Quantity,
+			SoldOut:         item.SoldOut,
+			Photo:           toPhotoResponse(photoStorage, item.Photo),
 		})
 	}
 

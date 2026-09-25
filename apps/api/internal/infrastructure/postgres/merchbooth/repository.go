@@ -37,21 +37,27 @@ type Repository struct {
 }
 
 type boothVariantRow struct {
-	ProductID   string
-	VariantID   string
-	ProductName string
-	Category    string
-	Size        string
-	Colour      string
-	PriceAmount int
-	CostAmount  int
-	Currency    string
-	Quantity    int
-	PhotoKey    string
-	PhotoType   string
-	PhotoSize   int
-	PhotoWidth  int
-	PhotoHeight int
+	ProductID          string
+	VariantID          string
+	ColourVariantID    string
+	ProductName        string
+	Category           string
+	Size               string
+	Colour             string
+	PriceAmount        int
+	CostAmount         int
+	Currency           string
+	Quantity           int
+	FullPhotoKey       string
+	FullPhotoType      string
+	FullPhotoSize      int
+	FullPhotoWidth     int
+	FullPhotoHeight    int
+	DisplayPhotoKey    string
+	DisplayPhotoType   string
+	DisplayPhotoSize   int
+	DisplayPhotoWidth  int
+	DisplayPhotoHeight int
 }
 
 type checkoutLine struct {
@@ -70,24 +76,32 @@ func (repository Repository) ListBoothItems(ctx context.Context, query applicati
 	rows, err := repository.pool.Query(ctx, `
 		SELECT merch_products.id,
 			merch_variants.id,
+			merch_colour_variants.id,
 			merch_products.name,
 			merch_products.category,
 			merch_variants.size,
-			merch_variants.colour,
-			merch_variants.price_amount,
-			merch_variants.cost_amount,
-			merch_variants.currency,
+			merch_colour_variants.colour,
+			merch_colour_variants.price_amount,
+			merch_colour_variants.cost_amount,
+			merch_colour_variants.currency,
 			merch_variants.quantity,
-			merch_products.photo_display_object_key,
-			merch_products.photo_display_content_type,
-			merch_products.photo_display_size_bytes,
-			merch_products.photo_display_width,
-			merch_products.photo_display_height
+			merch_colour_variants.photo_full_object_key,
+			merch_colour_variants.photo_full_content_type,
+			merch_colour_variants.photo_full_size_bytes,
+			merch_colour_variants.photo_full_width,
+			merch_colour_variants.photo_full_height,
+			merch_colour_variants.photo_display_object_key,
+			merch_colour_variants.photo_display_content_type,
+			merch_colour_variants.photo_display_size_bytes,
+			merch_colour_variants.photo_display_width,
+			merch_colour_variants.photo_display_height
 		FROM merch_variants
 		INNER JOIN merch_products ON merch_products.id = merch_variants.product_id
+		INNER JOIN merch_colour_variants ON merch_colour_variants.id = merch_variants.colour_variant_id
 		WHERE merch_variants.band_id = $1
 			AND merch_variants.deleted_at IS NULL
 			AND merch_products.deleted_at IS NULL
+			AND merch_colour_variants.deleted_at IS NULL
 		ORDER BY merch_products.created_at ASC, merch_variants.created_at ASC, merch_variants.id ASC
 	`, query.Account.BandID)
 	if err != nil {
@@ -1259,25 +1273,33 @@ func lockCheckoutVariants(ctx context.Context, tx pgx.Tx, command applicationmer
 		row := tx.QueryRow(ctx, `
 			SELECT merch_products.id,
 				merch_variants.id,
+				merch_colour_variants.id,
 				merch_products.name,
 				merch_products.category,
 				merch_variants.size,
-				merch_variants.colour,
-				merch_variants.price_amount,
-				merch_variants.cost_amount,
-				merch_variants.currency,
+				merch_colour_variants.colour,
+				merch_colour_variants.price_amount,
+				merch_colour_variants.cost_amount,
+				merch_colour_variants.currency,
 				merch_variants.quantity,
-				merch_products.photo_display_object_key,
-				merch_products.photo_display_content_type,
-				merch_products.photo_display_size_bytes,
-				merch_products.photo_display_width,
-				merch_products.photo_display_height
+				merch_colour_variants.photo_full_object_key,
+				merch_colour_variants.photo_full_content_type,
+				merch_colour_variants.photo_full_size_bytes,
+				merch_colour_variants.photo_full_width,
+				merch_colour_variants.photo_full_height,
+				merch_colour_variants.photo_display_object_key,
+				merch_colour_variants.photo_display_content_type,
+				merch_colour_variants.photo_display_size_bytes,
+				merch_colour_variants.photo_display_width,
+				merch_colour_variants.photo_display_height
 			FROM merch_variants
 			INNER JOIN merch_products ON merch_products.id = merch_variants.product_id
+			INNER JOIN merch_colour_variants ON merch_colour_variants.id = merch_variants.colour_variant_id
 			WHERE merch_variants.band_id = $1
 				AND merch_variants.id = $2
 				AND merch_variants.deleted_at IS NULL
 				AND merch_products.deleted_at IS NULL
+				AND merch_colour_variants.deleted_at IS NULL
 			FOR UPDATE OF merch_variants
 		`, command.Account.BandID, item.VariantID)
 
@@ -1605,6 +1627,7 @@ func scanBoothItem(row pgx.Row) (applicationmerchbooth.BoothItem, error) {
 	err := row.Scan(
 		&variantRow.ProductID,
 		&variantRow.VariantID,
+		&variantRow.ColourVariantID,
 		&variantRow.ProductName,
 		&variantRow.Category,
 		&variantRow.Size,
@@ -1613,11 +1636,16 @@ func scanBoothItem(row pgx.Row) (applicationmerchbooth.BoothItem, error) {
 		&variantRow.CostAmount,
 		&variantRow.Currency,
 		&variantRow.Quantity,
-		&variantRow.PhotoKey,
-		&variantRow.PhotoType,
-		&variantRow.PhotoSize,
-		&variantRow.PhotoWidth,
-		&variantRow.PhotoHeight,
+		&variantRow.FullPhotoKey,
+		&variantRow.FullPhotoType,
+		&variantRow.FullPhotoSize,
+		&variantRow.FullPhotoWidth,
+		&variantRow.FullPhotoHeight,
+		&variantRow.DisplayPhotoKey,
+		&variantRow.DisplayPhotoType,
+		&variantRow.DisplayPhotoSize,
+		&variantRow.DisplayPhotoWidth,
+		&variantRow.DisplayPhotoHeight,
 	)
 	if err != nil {
 		return applicationmerchbooth.BoothItem{}, err
@@ -1634,29 +1662,30 @@ func scanBoothItem(row pgx.Row) (applicationmerchbooth.BoothItem, error) {
 	}
 
 	return applicationmerchbooth.BoothItem{
-		ProductID:   variantRow.ProductID,
-		VariantID:   variantRow.VariantID,
-		ProductName: variantRow.ProductName,
-		Category:    category,
-		Size:        size,
-		Colour:      variantRow.Colour,
-		Price:       inventorydomain.Money{Amount: variantRow.PriceAmount, Currency: variantRow.Currency},
-		Cost:        inventorydomain.Money{Amount: variantRow.CostAmount, Currency: variantRow.Currency},
-		Quantity:    variantRow.Quantity,
+		ProductID:       variantRow.ProductID,
+		VariantID:       variantRow.VariantID,
+		ColourVariantID: variantRow.ColourVariantID,
+		ProductName:     variantRow.ProductName,
+		Category:        category,
+		Size:            size,
+		Colour:          variantRow.Colour,
+		Price:           inventorydomain.Money{Amount: variantRow.PriceAmount, Currency: variantRow.Currency},
+		Cost:            inventorydomain.Money{Amount: variantRow.CostAmount, Currency: variantRow.Currency},
+		Quantity:        variantRow.Quantity,
 		Photo: inventorydomain.PhotoMetadata{
 			Full: inventorydomain.PhotoVariantMetadata{
-				ObjectKey:   variantRow.PhotoKey,
-				ContentType: variantRow.PhotoType,
-				SizeBytes:   variantRow.PhotoSize,
-				Width:       variantRow.PhotoWidth,
-				Height:      variantRow.PhotoHeight,
+				ObjectKey:   variantRow.FullPhotoKey,
+				ContentType: variantRow.FullPhotoType,
+				SizeBytes:   variantRow.FullPhotoSize,
+				Width:       variantRow.FullPhotoWidth,
+				Height:      variantRow.FullPhotoHeight,
 			},
 			Display: inventorydomain.PhotoVariantMetadata{
-				ObjectKey:   variantRow.PhotoKey,
-				ContentType: variantRow.PhotoType,
-				SizeBytes:   variantRow.PhotoSize,
-				Width:       variantRow.PhotoWidth,
-				Height:      variantRow.PhotoHeight,
+				ObjectKey:   variantRow.DisplayPhotoKey,
+				ContentType: variantRow.DisplayPhotoType,
+				SizeBytes:   variantRow.DisplayPhotoSize,
+				Width:       variantRow.DisplayPhotoWidth,
+				Height:      variantRow.DisplayPhotoHeight,
 			},
 		},
 		SoldOut: variantRow.Quantity == 0,

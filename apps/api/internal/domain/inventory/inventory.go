@@ -144,6 +144,19 @@ func ValidateQuantity(quantity int) error {
 	return nil
 }
 
+func ValidateCategorySize(category Category, size Size) error {
+	if category == CategoryShirt || category == CategoryHoodie {
+		if size == SizeNotApplicable || size == SizeOneSize {
+			return fmt.Errorf("size %q is invalid for category %q", size, category)
+		}
+		return nil
+	}
+	if size != SizeNotApplicable {
+		return fmt.Errorf("category %q requires not_applicable size", category)
+	}
+	return nil
+}
+
 func ValidatePhotoMetadata(photo PhotoMetadata) error {
 	if err := validatePhotoVariantMetadata("full", photo.Full, FullPhotoMaxSizeBytes, FullPhotoMaxLongestEdge, FullPhotoMaxLongestEdge); err != nil {
 		return err
@@ -204,12 +217,7 @@ func NormalizeProductName(name string) (string, error) {
 }
 
 func NormalizeColour(colour string) string {
-	normalized := normalizeIdentityText(colour)
-	if normalized == "" {
-		return "not_applicable"
-	}
-
-	return normalized
+	return normalizeIdentityText(colour)
 }
 
 func ProductIdentityFor(category Category, name string) (ProductIdentity, error) {
@@ -232,10 +240,14 @@ func VariantIdentityFor(size Size, colour string) (VariantIdentity, error) {
 	if !size.IsValid() {
 		return VariantIdentity{}, fmt.Errorf("invalid inventory size %q", size)
 	}
+	normalizedColour := NormalizeColour(colour)
+	if normalizedColour == "" {
+		return VariantIdentity{}, fmt.Errorf("variant colour is required")
+	}
 
 	return VariantIdentity{
 		Size:             size,
-		NormalizedColour: NormalizeColour(colour),
+		NormalizedColour: normalizedColour,
 	}, nil
 }
 

@@ -17,6 +17,7 @@ import (
 const (
 	duplicateProductConstraint = "merch_products_active_identity_idx"
 	duplicateVariantConstraint = "merch_variants_active_identity_idx"
+	duplicateColourConstraint  = "merch_colour_variants_active_identity_idx"
 )
 
 type Repository struct {
@@ -49,15 +50,35 @@ func (repository Repository) CreateProduct(ctx context.Context, command applicat
 	}
 
 	variants := make([]applicationinventory.Variant, 0, len(command.Variants))
+	colourVariantIDs := make(map[string]string, len(command.Variants))
+	colourVariantMetadata := make(map[string]applicationinventory.CreateProductVariantCommand, len(command.Variants))
 	for _, variantCommand := range command.Variants {
+		if err := inventorydomain.ValidateCategorySize(command.Category, variantCommand.Size); err != nil {
+			return applicationinventory.Product{}, err
+		}
+		if existing, ok := colourVariantMetadata[variantCommand.NormalizedColour]; ok {
+			if existing.Price != variantCommand.Price || existing.Cost != variantCommand.Cost || existing.Photo != variantCommand.Photo {
+				return applicationinventory.Product{}, fmt.Errorf("%w: colour %q has inconsistent photo, price, or cost", applicationinventory.ErrDuplicateVariant, variantCommand.NormalizedColour)
+			}
+		} else {
+			colourVariantMetadata[variantCommand.NormalizedColour] = variantCommand
+		}
+		colourVariantID, ok := colourVariantIDs[variantCommand.NormalizedColour]
+		if !ok {
+			colourVariantID = uuid.NewString()
+			if err := insertColourVariant(ctx, tx, colourVariantID, productID, command.Account.BandID, variantCommand, command.CreatedAt); err != nil {
+				return applicationinventory.Product{}, err
+			}
+			colourVariantIDs[variantCommand.NormalizedColour] = colourVariantID
+		}
 		variantID := uuid.NewString()
 		_, err = tx.Exec(ctx, `
 			INSERT INTO merch_variants (
-				id, band_id, product_id, size, colour, normalized_colour,
+				id, band_id, product_id, colour_variant_id, size, colour, normalized_colour,
 				price_amount, cost_amount, currency, quantity, created_at, updated_at
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-		`, variantID, command.Account.BandID, productID, variantCommand.Size, variantCommand.Colour, variantCommand.NormalizedColour, variantCommand.Price.Amount, variantCommand.Cost.Amount, variantCommand.Price.Currency, variantCommand.Quantity, command.CreatedAt)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+		`, variantID, command.Account.BandID, productID, colourVariantID, variantCommand.Size, variantCommand.Colour, variantCommand.NormalizedColour, variantCommand.Price.Amount, variantCommand.Cost.Amount, variantCommand.Price.Currency, variantCommand.Quantity, command.CreatedAt)
 		if err != nil {
 			return applicationinventory.Product{}, mapPostgresError(err, fmt.Sprintf("insert inventory variant band_id=%q product_id=%q size=%q colour=%q", command.Account.BandID, productID, variantCommand.Size, variantCommand.NormalizedColour))
 		}
@@ -75,10 +96,12 @@ func (repository Repository) CreateProduct(ctx context.Context, command applicat
 
 		variants = append(variants, applicationinventory.Variant{
 			ID:               variantID,
+			ColourVariantID:  colourVariantID,
 			ProductID:        productID,
 			Size:             variantCommand.Size,
 			Colour:           variantCommand.Colour,
 			NormalizedColour: variantCommand.NormalizedColour,
+			Photo:            variantCommand.Photo,
 			Price:            variantCommand.Price,
 			Cost:             variantCommand.Cost,
 			Quantity:         variantCommand.Quantity,
@@ -116,27 +139,39 @@ func (repository Repository) CreateVariant(ctx context.Context, command applicat
 	defer tx.Rollback(ctx)
 
 	var productID string
+	var categoryValue string
 	err = tx.QueryRow(ctx, `
-		SELECT id
+		SELECT id, category
 		FROM merch_products
 		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
 		FOR UPDATE
-	`, command.ProductID, command.Account.BandID).Scan(&productID)
+	`, command.ProductID, command.Account.BandID).Scan(&productID, &categoryValue)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return applicationinventory.Variant{}, fmt.Errorf("%w: band_id=%q product_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.ProductID)
 	}
 	if err != nil {
 		return applicationinventory.Variant{}, fmt.Errorf("query inventory product before variant create band_id=%q product_id=%q: %w", command.Account.BandID, command.ProductID, err)
 	}
+	category, err := inventorydomain.ParseCategory(categoryValue)
+	if err != nil {
+		return applicationinventory.Variant{}, err
+	}
+	if err := inventorydomain.ValidateCategorySize(category, command.Size); err != nil {
+		return applicationinventory.Variant{}, err
+	}
+	colourVariantID, err := findOrCreateColourVariant(ctx, tx, command)
+	if err != nil {
+		return applicationinventory.Variant{}, err
+	}
 
 	variantID := uuid.NewString()
 	_, err = tx.Exec(ctx, `
 		INSERT INTO merch_variants (
-			id, band_id, product_id, size, colour, normalized_colour,
+			id, band_id, product_id, colour_variant_id, size, colour, normalized_colour,
 			price_amount, cost_amount, currency, quantity, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-	`, variantID, command.Account.BandID, productID, command.Size, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency, command.Quantity, command.CreatedAt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+	`, variantID, command.Account.BandID, productID, colourVariantID, command.Size, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency, command.Quantity, command.CreatedAt)
 	if err != nil {
 		return applicationinventory.Variant{}, mapPostgresError(err, fmt.Sprintf("insert inventory variant band_id=%q product_id=%q size=%q colour=%q", command.Account.BandID, command.ProductID, command.Size, command.NormalizedColour))
 	}
@@ -162,10 +197,12 @@ func (repository Repository) CreateVariant(ctx context.Context, command applicat
 
 	return applicationinventory.Variant{
 		ID:               variantID,
+		ColourVariantID:  colourVariantID,
 		ProductID:        productID,
 		Size:             command.Size,
 		Colour:           command.Colour,
 		NormalizedColour: command.NormalizedColour,
+		Photo:            command.Photo,
 		Price:            command.Price,
 		Cost:             command.Cost,
 		Quantity:         command.Quantity,
@@ -209,11 +246,19 @@ func (repository Repository) ListInventory(ctx context.Context, query applicatio
 	}
 
 	variantRows, err := repository.pool.Query(ctx, `
-		SELECT id, product_id, size, colour, normalized_colour,
-			price_amount, cost_amount, currency, quantity, created_at, updated_at
+		SELECT merch_variants.id, merch_variants.product_id, merch_variants.size,
+			merch_colour_variants.colour, merch_colour_variants.normalized_colour,
+			merch_colour_variants.price_amount, merch_colour_variants.cost_amount, merch_colour_variants.currency,
+			merch_variants.quantity, merch_variants.created_at, merch_variants.updated_at,
+			merch_colour_variants.id,
+			merch_colour_variants.photo_full_object_key, merch_colour_variants.photo_full_content_type,
+			merch_colour_variants.photo_full_size_bytes, merch_colour_variants.photo_full_width, merch_colour_variants.photo_full_height,
+			merch_colour_variants.photo_display_object_key, merch_colour_variants.photo_display_content_type,
+			merch_colour_variants.photo_display_size_bytes, merch_colour_variants.photo_display_width, merch_colour_variants.photo_display_height
 		FROM merch_variants
-		WHERE band_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at ASC, id ASC
+		INNER JOIN merch_colour_variants ON merch_colour_variants.id = merch_variants.colour_variant_id
+		WHERE merch_variants.band_id = $1 AND merch_variants.deleted_at IS NULL AND merch_colour_variants.deleted_at IS NULL
+		ORDER BY merch_colour_variants.created_at ASC, merch_variants.created_at ASC, merch_variants.id ASC
 	`, query.Account.BandID)
 	if err != nil {
 		return nil, fmt.Errorf("query inventory variants band_id=%q: %w", query.Account.BandID, err)
@@ -244,6 +289,27 @@ func (repository Repository) UpdateProduct(ctx context.Context, command applicat
 		return applicationinventory.Product{}, fmt.Errorf("begin inventory product update transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	var previousCategoryValue string
+	err = tx.QueryRow(ctx, `
+		SELECT category FROM merch_products
+		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, command.ProductID, command.Account.BandID).Scan(&previousCategoryValue)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return applicationinventory.Product{}, fmt.Errorf("%w: band_id=%q product_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.ProductID)
+	}
+	if err != nil {
+		return applicationinventory.Product{}, fmt.Errorf("query product category before update band_id=%q product_id=%q: %w", command.Account.BandID, command.ProductID, err)
+	}
+	previousCategory, err := inventorydomain.ParseCategory(previousCategoryValue)
+	if err != nil {
+		return applicationinventory.Product{}, err
+	}
+	previousSized := previousCategory == inventorydomain.CategoryShirt || previousCategory == inventorydomain.CategoryHoodie
+	nextSized := command.Category == inventorydomain.CategoryShirt || command.Category == inventorydomain.CategoryHoodie
+	if previousSized != nextSized {
+		return applicationinventory.Product{}, fmt.Errorf("cannot change product category between sized and non-sized categories")
+	}
 
 	commandTag, err := tx.Exec(ctx, `
 		UPDATE merch_products
@@ -295,30 +361,61 @@ func (repository Repository) UpdateVariant(ctx context.Context, command applicat
 
 	var productID string
 	var oldQuantity int
+	var colourVariantID string
+	var categoryValue string
 	err = tx.QueryRow(ctx, `
-		SELECT product_id, quantity
+		SELECT merch_variants.product_id, merch_variants.quantity, merch_variants.colour_variant_id, merch_products.category
 		FROM merch_variants
-		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
-	`, command.VariantID, command.Account.BandID).Scan(&productID, &oldQuantity)
+		INNER JOIN merch_products ON merch_products.id = merch_variants.product_id
+		WHERE merch_variants.id = $1 AND merch_variants.band_id = $2 AND merch_variants.deleted_at IS NULL
+		FOR UPDATE OF merch_variants
+	`, command.VariantID, command.Account.BandID).Scan(&productID, &oldQuantity, &colourVariantID, &categoryValue)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return applicationinventory.Variant{}, fmt.Errorf("%w: band_id=%q variant_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.VariantID)
 	}
 	if err != nil {
 		return applicationinventory.Variant{}, fmt.Errorf("query inventory variant before update band_id=%q variant_id=%q: %w", command.Account.BandID, command.VariantID, err)
 	}
+	category, err := inventorydomain.ParseCategory(categoryValue)
+	if err != nil {
+		return applicationinventory.Variant{}, err
+	}
+	if err := inventorydomain.ValidateCategorySize(category, command.Size); err != nil {
+		return applicationinventory.Variant{}, err
+	}
+	photo := command.Photo
+	_, err = tx.Exec(ctx, `
+		UPDATE merch_colour_variants
+		SET colour = $1, normalized_colour = $2, price_amount = $3, cost_amount = $4, currency = $5,
+			photo_full_object_key = $6, photo_full_content_type = $7, photo_full_size_bytes = $8,
+			photo_full_width = $9, photo_full_height = $10,
+			photo_display_object_key = $11, photo_display_content_type = $12, photo_display_size_bytes = $13,
+			photo_display_width = $14, photo_display_height = $15, updated_at = $16
+		WHERE id = $17 AND band_id = $18 AND deleted_at IS NULL
+	`, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency,
+		photo.Full.ObjectKey, photo.Full.ContentType, photo.Full.SizeBytes, photo.Full.Width, photo.Full.Height,
+		photo.Display.ObjectKey, photo.Display.ContentType, photo.Display.SizeBytes, photo.Display.Width, photo.Display.Height,
+		command.UpdatedAt, colourVariantID, command.Account.BandID)
+	if err != nil {
+		return applicationinventory.Variant{}, mapPostgresError(err, fmt.Sprintf("update colour variant band_id=%q colour_variant_id=%q", command.Account.BandID, colourVariantID))
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE merch_variants
+		SET colour = $1, normalized_colour = $2, price_amount = $3, cost_amount = $4,
+			currency = $5, updated_at = $6
+		WHERE colour_variant_id = $7 AND band_id = $8 AND deleted_at IS NULL
+	`, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency, command.UpdatedAt, colourVariantID, command.Account.BandID)
+	if err != nil {
+		return applicationinventory.Variant{}, fmt.Errorf("update colour variant stock snapshots band_id=%q colour_variant_id=%q: %w", command.Account.BandID, colourVariantID, err)
+	}
 
 	commandTag, err := tx.Exec(ctx, `
 		UPDATE merch_variants
 		SET size = $1,
-			colour = $2,
-			normalized_colour = $3,
-			price_amount = $4,
-			cost_amount = $5,
-			currency = $6,
-			quantity = $7,
-			updated_at = $8
-		WHERE id = $9 AND band_id = $10 AND deleted_at IS NULL
-	`, command.Size, command.Colour, command.NormalizedColour, command.Price.Amount, command.Cost.Amount, command.Price.Currency, command.Quantity, command.UpdatedAt, command.VariantID, command.Account.BandID)
+			quantity = $2,
+			updated_at = $3
+		WHERE id = $4 AND band_id = $5 AND deleted_at IS NULL
+	`, command.Size, command.Quantity, command.UpdatedAt, command.VariantID, command.Account.BandID)
 	if err != nil {
 		return applicationinventory.Variant{}, mapPostgresError(err, fmt.Sprintf("update inventory variant band_id=%q variant_id=%q", command.Account.BandID, command.VariantID))
 	}
@@ -383,6 +480,14 @@ func (repository Repository) SoftDeleteProduct(ctx context.Context, command appl
 	if err != nil {
 		return fmt.Errorf("soft delete inventory product variants band_id=%q product_id=%q: %w", command.Account.BandID, command.ProductID, err)
 	}
+	_, err = tx.Exec(ctx, `
+		UPDATE merch_colour_variants
+		SET deleted_at = $1, deleted_by = $2, updated_at = $1
+		WHERE product_id = $3 AND band_id = $4 AND deleted_at IS NULL
+	`, command.DeletedAt, command.Account.UserID, command.ProductID, command.Account.BandID)
+	if err != nil {
+		return fmt.Errorf("soft delete inventory colour variants band_id=%q product_id=%q: %w", command.Account.BandID, command.ProductID, err)
+	}
 
 	if err := insertAuditLog(ctx, tx, command.Account.UserID, command.Account.BandID, "inventory.product_deleted", "merch_product", command.ProductID, command.RequestID, command.IdempotencyKey, command.DeletedAt); err != nil {
 		return err
@@ -403,11 +508,12 @@ func (repository Repository) SoftDeleteVariant(ctx context.Context, command appl
 	defer tx.Rollback(ctx)
 
 	var productID string
+	var colourVariantID string
 	err = tx.QueryRow(ctx, `
-		SELECT product_id
+		SELECT product_id, colour_variant_id
 		FROM merch_variants
 		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
-	`, command.VariantID, command.Account.BandID).Scan(&productID)
+	`, command.VariantID, command.Account.BandID).Scan(&productID, &colourVariantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("%w: band_id=%q variant_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.VariantID)
 	}
@@ -453,6 +559,23 @@ func (repository Repository) SoftDeleteVariant(ctx context.Context, command appl
 	if commandTag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: band_id=%q variant_id=%q", applicationinventory.ErrInventoryNotFound, command.Account.BandID, command.VariantID)
 	}
+	var activeSizeCount int
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM merch_variants
+		WHERE colour_variant_id = $1 AND band_id = $2 AND deleted_at IS NULL
+	`, colourVariantID, command.Account.BandID).Scan(&activeSizeCount)
+	if err != nil {
+		return fmt.Errorf("count colour variant sizes band_id=%q colour_variant_id=%q: %w", command.Account.BandID, colourVariantID, err)
+	}
+	if activeSizeCount == 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE merch_colour_variants SET deleted_at = $1, deleted_by = $2, updated_at = $1
+			WHERE id = $3 AND band_id = $4 AND deleted_at IS NULL
+		`, command.DeletedAt, command.Account.UserID, colourVariantID, command.Account.BandID)
+		if err != nil {
+			return fmt.Errorf("soft delete empty colour variant band_id=%q colour_variant_id=%q: %w", command.Account.BandID, colourVariantID, err)
+		}
+	}
 
 	if err := insertAuditLog(ctx, tx, command.Account.UserID, command.Account.BandID, "inventory.variant_deleted", "merch_variant", command.VariantID, command.RequestID, command.IdempotencyKey, command.DeletedAt); err != nil {
 		return err
@@ -484,11 +607,19 @@ func getProductByID(ctx context.Context, tx pgx.Tx, bandID string, productID str
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, product_id, size, colour, normalized_colour,
-			price_amount, cost_amount, currency, quantity, created_at, updated_at
+		SELECT merch_variants.id, merch_variants.product_id, merch_variants.size,
+			merch_colour_variants.colour, merch_colour_variants.normalized_colour,
+			merch_colour_variants.price_amount, merch_colour_variants.cost_amount, merch_colour_variants.currency,
+			merch_variants.quantity, merch_variants.created_at, merch_variants.updated_at,
+			merch_colour_variants.id,
+			merch_colour_variants.photo_full_object_key, merch_colour_variants.photo_full_content_type,
+			merch_colour_variants.photo_full_size_bytes, merch_colour_variants.photo_full_width, merch_colour_variants.photo_full_height,
+			merch_colour_variants.photo_display_object_key, merch_colour_variants.photo_display_content_type,
+			merch_colour_variants.photo_display_size_bytes, merch_colour_variants.photo_display_width, merch_colour_variants.photo_display_height
 		FROM merch_variants
-		WHERE product_id = $1 AND band_id = $2 AND deleted_at IS NULL
-		ORDER BY created_at ASC, id ASC
+		INNER JOIN merch_colour_variants ON merch_colour_variants.id = merch_variants.colour_variant_id
+		WHERE merch_variants.product_id = $1 AND merch_variants.band_id = $2 AND merch_variants.deleted_at IS NULL AND merch_colour_variants.deleted_at IS NULL
+		ORDER BY merch_colour_variants.created_at ASC, merch_variants.created_at ASC, merch_variants.id ASC
 	`, productID, bandID)
 	if err != nil {
 		return applicationinventory.Product{}, fmt.Errorf("query inventory product variants band_id=%q product_id=%q: %w", bandID, productID, err)
@@ -511,10 +642,18 @@ func getProductByID(ctx context.Context, tx pgx.Tx, bandID string, productID str
 
 func getVariantByID(ctx context.Context, tx pgx.Tx, bandID string, variantID string) (applicationinventory.Variant, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT id, product_id, size, colour, normalized_colour,
-			price_amount, cost_amount, currency, quantity, created_at, updated_at
+		SELECT merch_variants.id, merch_variants.product_id, merch_variants.size,
+			merch_colour_variants.colour, merch_colour_variants.normalized_colour,
+			merch_colour_variants.price_amount, merch_colour_variants.cost_amount, merch_colour_variants.currency,
+			merch_variants.quantity, merch_variants.created_at, merch_variants.updated_at,
+			merch_colour_variants.id,
+			merch_colour_variants.photo_full_object_key, merch_colour_variants.photo_full_content_type,
+			merch_colour_variants.photo_full_size_bytes, merch_colour_variants.photo_full_width, merch_colour_variants.photo_full_height,
+			merch_colour_variants.photo_display_object_key, merch_colour_variants.photo_display_content_type,
+			merch_colour_variants.photo_display_size_bytes, merch_colour_variants.photo_display_width, merch_colour_variants.photo_display_height
 		FROM merch_variants
-		WHERE id = $1 AND band_id = $2 AND deleted_at IS NULL
+		INNER JOIN merch_colour_variants ON merch_colour_variants.id = merch_variants.colour_variant_id
+		WHERE merch_variants.id = $1 AND merch_variants.band_id = $2 AND merch_variants.deleted_at IS NULL AND merch_colour_variants.deleted_at IS NULL
 	`, variantID, bandID)
 
 	variant, err := scanVariant(row)
@@ -579,6 +718,17 @@ func scanVariant(row pgx.Row) (applicationinventory.Variant, error) {
 		&variant.Quantity,
 		&variant.CreatedAt,
 		&variant.UpdatedAt,
+		&variant.ColourVariantID,
+		&variant.Photo.Full.ObjectKey,
+		&variant.Photo.Full.ContentType,
+		&variant.Photo.Full.SizeBytes,
+		&variant.Photo.Full.Width,
+		&variant.Photo.Full.Height,
+		&variant.Photo.Display.ObjectKey,
+		&variant.Photo.Display.ContentType,
+		&variant.Photo.Display.SizeBytes,
+		&variant.Photo.Display.Width,
+		&variant.Photo.Display.Height,
 	)
 	if err != nil {
 		return applicationinventory.Variant{}, err
@@ -617,6 +767,8 @@ func mapPostgresError(err error, contextMessage string) error {
 	case duplicateProductConstraint:
 		return fmt.Errorf("%w: %s: %s", applicationinventory.ErrDuplicateProduct, contextMessage, pgErr.Message)
 	case duplicateVariantConstraint:
+		return fmt.Errorf("%w: %s: %s", applicationinventory.ErrDuplicateVariant, contextMessage, pgErr.Message)
+	case duplicateColourConstraint:
 		return fmt.Errorf("%w: %s: %s", applicationinventory.ErrDuplicateVariant, contextMessage, pgErr.Message)
 	default:
 		return fmt.Errorf("%s: status_code=%q constraint=%q message=%q: %w", contextMessage, pgErr.Code, pgErr.ConstraintName, pgErr.Message, err)

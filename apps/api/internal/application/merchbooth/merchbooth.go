@@ -291,17 +291,18 @@ type CartItem struct {
 }
 
 type BoothItem struct {
-	ProductID   string
-	VariantID   string
-	ProductName string
-	Category    inventorydomain.Category
-	Size        inventorydomain.Size
-	Colour      string
-	Price       inventorydomain.Money
-	Cost        inventorydomain.Money
-	Quantity    int
-	Photo       inventorydomain.PhotoMetadata
-	SoldOut     bool
+	ProductID       string
+	VariantID       string
+	ColourVariantID string
+	ProductName     string
+	Category        inventorydomain.Category
+	Size            inventorydomain.Size
+	Colour          string
+	Price           inventorydomain.Money
+	Cost            inventorydomain.Money
+	Quantity        int
+	Photo           inventorydomain.PhotoMetadata
+	SoldOut         bool
 }
 
 type Sale struct {

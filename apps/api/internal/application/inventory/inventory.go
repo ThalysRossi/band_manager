@@ -104,6 +104,7 @@ type PhotoUploadRequest struct {
 type VariantInput struct {
 	Size        string
 	Colour      string
+	Photo       PhotoInput
 	PriceAmount int
 	CostAmount  int
 	Currency    string
@@ -178,6 +179,7 @@ type CreateProductVariantCommand struct {
 	Size             inventorydomain.Size
 	Colour           string
 	NormalizedColour string
+	Photo            inventorydomain.PhotoMetadata
 	Price            inventorydomain.Money
 	Cost             inventorydomain.Money
 	Quantity         int
@@ -189,6 +191,7 @@ type CreateVariantCommand struct {
 	Size             inventorydomain.Size
 	Colour           string
 	NormalizedColour string
+	Photo            inventorydomain.PhotoMetadata
 	Price            inventorydomain.Money
 	Cost             inventorydomain.Money
 	Quantity         int
@@ -215,6 +218,7 @@ type UpdateVariantCommand struct {
 	Size             inventorydomain.Size
 	Colour           string
 	NormalizedColour string
+	Photo            inventorydomain.PhotoMetadata
 	Price            inventorydomain.Money
 	Cost             inventorydomain.Money
 	Quantity         int
@@ -257,10 +261,12 @@ type Product struct {
 
 type Variant struct {
 	ID               string
+	ColourVariantID  string
 	ProductID        string
 	Size             inventorydomain.Size
 	Colour           string
 	NormalizedColour string
+	Photo            inventorydomain.PhotoMetadata
 	Price            inventorydomain.Money
 	Cost             inventorydomain.Money
 	Quantity         int
@@ -274,8 +280,10 @@ func CreateProduct(ctx context.Context, repository Repository, photoStorage Phot
 		return Product{}, err
 	}
 
-	if err := verifyPhotoObjects(ctx, photoStorage, command.Photo); err != nil {
-		return Product{}, err
+	for _, variant := range command.Variants {
+		if err := verifyPhotoObjects(ctx, photoStorage, variant.Photo); err != nil {
+			return Product{}, fmt.Errorf("verify colour %q photo: %w", variant.NormalizedColour, err)
+		}
 	}
 
 	product, err := repository.CreateProduct(ctx, command)
@@ -286,9 +294,12 @@ func CreateProduct(ctx context.Context, repository Repository, photoStorage Phot
 	return product, nil
 }
 
-func CreateVariant(ctx context.Context, repository Repository, input CreateVariantInput) (Variant, error) {
+func CreateVariant(ctx context.Context, repository Repository, photoStorage PhotoStorage, input CreateVariantInput) (Variant, error) {
 	command, err := validateCreateVariantInput(input)
 	if err != nil {
+		return Variant{}, err
+	}
+	if err := verifyPhotoObjects(ctx, photoStorage, command.Photo); err != nil {
 		return Variant{}, err
 	}
 
@@ -355,9 +366,12 @@ func CreatePhotoUpload(ctx context.Context, photoStorage PhotoStorage, input Cre
 	}, nil
 }
 
-func UpdateVariant(ctx context.Context, repository Repository, input UpdateVariantInput) (Variant, error) {
+func UpdateVariant(ctx context.Context, repository Repository, photoStorage PhotoStorage, input UpdateVariantInput) (Variant, error) {
 	command, err := validateUpdateVariantInput(input)
 	if err != nil {
+		return Variant{}, err
+	}
+	if err := verifyPhotoObjects(ctx, photoStorage, command.Photo); err != nil {
 		return Variant{}, err
 	}
 
@@ -409,9 +423,12 @@ func validateCreateProductInput(input CreateProductInput) (CreateProductCommand,
 		return CreateProductCommand{}, fmt.Errorf("at least one inventory variant is required")
 	}
 
-	variants, err := validateCreateVariantInputs(input.Variants)
+	variants, err := validateCreateVariantInputs(category, input.Variants)
 	if err != nil {
 		return CreateProductCommand{}, err
+	}
+	if photo != variants[0].Photo {
+		return CreateProductCommand{}, fmt.Errorf("product photo must match the first colour variant photo")
 	}
 
 	idempotencyKey, requestID, err := validateMutationMetadata(input.IdempotencyKey, input.RequestID, input.CreatedAt)
@@ -499,6 +516,7 @@ func validateCreateVariantInput(input CreateVariantInput) (CreateVariantCommand,
 		Size:             variant.Size,
 		Colour:           variant.Colour,
 		NormalizedColour: variant.NormalizedColour,
+		Photo:            variant.Photo,
 		Price:            variant.Price,
 		Cost:             variant.Cost,
 		Quantity:         variant.Quantity,
@@ -534,6 +552,7 @@ func validateUpdateVariantInput(input UpdateVariantInput) (UpdateVariantCommand,
 		Size:             variant.Size,
 		Colour:           variant.Colour,
 		NormalizedColour: variant.NormalizedColour,
+		Photo:            variant.Photo,
 		Price:            variant.Price,
 		Cost:             variant.Cost,
 		Quantity:         variant.Quantity,
@@ -709,9 +728,10 @@ func verifyPhotoObject(ctx context.Context, photoStorage PhotoStorage, label str
 	return nil
 }
 
-func validateCreateVariantInputs(inputs []VariantInput) ([]CreateProductVariantCommand, error) {
+func validateCreateVariantInputs(category inventorydomain.Category, inputs []VariantInput) ([]CreateProductVariantCommand, error) {
 	variants := make([]CreateProductVariantCommand, 0, len(inputs))
 	seenIdentities := make(map[inventorydomain.VariantIdentity]bool, len(inputs))
+	colourVariants := make(map[string]CreateProductVariantCommand, len(inputs))
 	for index, input := range inputs {
 		variant, err := validateVariantInput(input)
 		if err != nil {
@@ -726,6 +746,16 @@ func validateCreateVariantInputs(inputs []VariantInput) ([]CreateProductVariantC
 			return nil, fmt.Errorf("duplicate variant size %q and colour %q", identity.Size, identity.NormalizedColour)
 		}
 		seenIdentities[identity] = true
+		if err := inventorydomain.ValidateCategorySize(category, variant.Size); err != nil {
+			return nil, fmt.Errorf("variant at index %d: %w", index, err)
+		}
+		if existing, ok := colourVariants[variant.NormalizedColour]; ok {
+			if existing.Price != variant.Price || existing.Cost != variant.Cost || existing.Photo != variant.Photo {
+				return nil, fmt.Errorf("colour %q must share price, cost, and photo across sizes", variant.NormalizedColour)
+			}
+		} else {
+			colourVariants[variant.NormalizedColour] = variant
+		}
 
 		variants = append(variants, variant)
 	}
@@ -758,11 +788,16 @@ func validateVariantInput(input VariantInput) (CreateProductVariantCommand, erro
 	if err := inventorydomain.ValidateQuantity(input.Quantity); err != nil {
 		return CreateProductVariantCommand{}, err
 	}
+	photo := inventorydomain.PhotoMetadata{Full: toPhotoVariantMetadata(input.Photo.Full), Display: toPhotoVariantMetadata(input.Photo.Display)}
+	if err := inventorydomain.ValidatePhotoMetadata(photo); err != nil {
+		return CreateProductVariantCommand{}, err
+	}
 
 	return CreateProductVariantCommand{
 		Size:             size,
 		Colour:           colour,
 		NormalizedColour: identity.NormalizedColour,
+		Photo:            photo,
 		Price:            price,
 		Cost:             cost,
 		Quantity:         input.Quantity,

@@ -1,3 +1,4 @@
+import { getAuthSession } from '../auth/provider'
 import { requiredEnv } from '../config/env'
 
 type RequestBody = Record<string, unknown>
@@ -22,7 +23,16 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<TResponse>(request: ApiRequest): Promise<TResponse> {
-  const headers = requestHeaders(request.accessToken, request.idempotent)
+  const session = await getAuthSession()
+  if (session === null) {
+    throw new ApiError(
+      401,
+      'invalid_session',
+      `Authenticated session is required for ${request.method} ${request.path}`
+    )
+  }
+
+  const headers = requestHeaders(session.accessToken, request.idempotent)
   const response = await fetch(`${apiBaseURL()}${request.path}`, {
     method: request.method,
     headers,

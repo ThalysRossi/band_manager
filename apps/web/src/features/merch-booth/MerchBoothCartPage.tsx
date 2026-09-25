@@ -157,7 +157,7 @@ function CartLineRow(props: {
       <img
         src={props.line.item.photo.display.publicUrl}
         alt={`${props.line.item.productName} ${props.translate('merchBooth.photoAlt')}`}
-        className="aspect-square size-[72px] rounded-md bg-muted object-contain"
+        className="aspect-square size-[72px] rounded-md bg-muted object-cover"
       />
       <div className="grid min-w-0 gap-ui-12">
         <div className="flex items-start justify-between gap-ui-12">

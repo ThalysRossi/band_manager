@@ -530,7 +530,7 @@ export function InventoryPage(props: InventoryPageProps) {
                     <img
                       src={previewURL}
                       alt={props.translate('inventory.photoPreviewAlt')}
-                      className="h-[120px] w-[160px] rounded-md border border-border bg-muted object-contain"
+                      className="h-[120px] w-[160px] rounded-md border border-border bg-muted object-cover"
                     />
                   )}
                 </div>
@@ -1083,7 +1083,7 @@ function InventoryList(props: {
                 <img
                   src={product.photo.display.publicUrl}
                   alt={product.name}
-                  className="h-12 w-16 rounded-md border border-border bg-muted object-contain"
+                  className="h-12 w-16 rounded-md border border-border bg-muted object-cover"
                 />
                 <span className="font-medium text-white-100">{product.name}</span>
               </div>

@@ -94,7 +94,7 @@ function BoothItemCard(props: {
       <img
         src={props.item.photo.display.publicUrl}
         alt={`${props.item.productName} ${props.translate('merchBooth.photoAlt')}`}
-        className="aspect-[4/3] w-full bg-muted object-contain"
+        className="aspect-[4/3] w-full bg-muted object-cover"
       />
       <CardHeader className="gap-ui-8 px-ui-16 pt-ui-16">
         <div className="flex flex-wrap items-start justify-between gap-ui-8">

@@ -44,8 +44,6 @@ const (
 	DisplayPhotoMaxSizeBytes = 2 * 1024 * 1024
 	DisplayPhotoMaxWidth     = 1280
 	DisplayPhotoMaxHeight    = 960
-	displayPhotoAspectWidth  = 4
-	displayPhotoAspectHeight = 3
 )
 
 type PhotoMetadata struct {
@@ -147,18 +145,18 @@ func ValidateQuantity(quantity int) error {
 }
 
 func ValidatePhotoMetadata(photo PhotoMetadata) error {
-	if err := validatePhotoVariantMetadata("full", photo.Full, FullPhotoMaxSizeBytes, FullPhotoMaxLongestEdge, FullPhotoMaxLongestEdge, false); err != nil {
+	if err := validatePhotoVariantMetadata("full", photo.Full, FullPhotoMaxSizeBytes, FullPhotoMaxLongestEdge, FullPhotoMaxLongestEdge); err != nil {
 		return err
 	}
 
-	if err := validatePhotoVariantMetadata("display", photo.Display, DisplayPhotoMaxSizeBytes, DisplayPhotoMaxWidth, DisplayPhotoMaxHeight, true); err != nil {
+	if err := validatePhotoVariantMetadata("display", photo.Display, DisplayPhotoMaxSizeBytes, DisplayPhotoMaxWidth, DisplayPhotoMaxHeight); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func validatePhotoVariantMetadata(label string, photo PhotoVariantMetadata, maxSizeBytes int, maxWidth int, maxHeight int, requireDisplayAspect bool) error {
+func validatePhotoVariantMetadata(label string, photo PhotoVariantMetadata, maxSizeBytes int, maxWidth int, maxHeight int) error {
 	objectKey := strings.TrimSpace(photo.ObjectKey)
 	if objectKey == "" {
 		return fmt.Errorf("%s photo object key is required", label)
@@ -191,10 +189,6 @@ func validatePhotoVariantMetadata(label string, photo PhotoVariantMetadata, maxS
 
 	if photo.Height > maxHeight {
 		return fmt.Errorf("%s photo height must be at most %d", label, maxHeight)
-	}
-
-	if requireDisplayAspect && photo.Width*displayPhotoAspectHeight != photo.Height*displayPhotoAspectWidth {
-		return fmt.Errorf("%s photo aspect ratio must be 4:3", label)
 	}
 
 	return nil

@@ -21,13 +21,6 @@ type CanvasSize = {
   height: number
 }
 
-type SourceCrop = {
-  sourceX: number
-  sourceY: number
-  sourceWidth: number
-  sourceHeight: number
-}
-
 const webpContentType = 'image/webp'
 const fullMaxLongestEdge = 3840
 const fullMaxSizeBytes = 10 * 1024 * 1024
@@ -75,19 +68,17 @@ async function createFullVariant(
   dimensions: ImageDimensions
 ): Promise<ProcessedPhotoVariant> {
   const canvasSize = fullCanvasSize(dimensions)
-  const crop = fullSourceCrop(dimensions)
 
-  return encodeVariant(image, crop, canvasSize, fullQualities, fullMaxSizeBytes)
+  return encodeVariant(image, dimensions, canvasSize, fullQualities, fullMaxSizeBytes)
 }
 
 async function createDisplayVariant(
   image: ImageBitmap,
   dimensions: ImageDimensions
 ): Promise<ProcessedPhotoVariant> {
-  const crop = displaySourceCrop(dimensions)
-  const canvasSize = displayCanvasSize(crop)
+  const canvasSize = displayCanvasSize(dimensions)
 
-  return encodeVariant(image, crop, canvasSize, displayQualities, displayMaxSizeBytes)
+  return encodeVariant(image, dimensions, canvasSize, displayQualities, displayMaxSizeBytes)
 }
 
 function fullCanvasSize(dimensions: ImageDimensions): CanvasSize {
@@ -106,52 +97,22 @@ function fullCanvasSize(dimensions: ImageDimensions): CanvasSize {
   }
 }
 
-function fullSourceCrop(dimensions: ImageDimensions): SourceCrop {
-  return {
-    sourceX: 0,
-    sourceY: 0,
-    sourceWidth: dimensions.width,
-    sourceHeight: dimensions.height
-  }
-}
-
-function displaySourceCrop(dimensions: ImageDimensions): SourceCrop {
-  const targetRatio = 4 / 3
-  const sourceRatio = dimensions.width / dimensions.height
-
-  if (sourceRatio > targetRatio) {
-    const sourceWidth = Math.round(dimensions.height * targetRatio)
-    return {
-      sourceX: Math.round((dimensions.width - sourceWidth) / 2),
-      sourceY: 0,
-      sourceWidth,
-      sourceHeight: dimensions.height
-    }
-  }
-
-  const sourceHeight = Math.round(dimensions.width / targetRatio)
-  return {
-    sourceX: 0,
-    sourceY: Math.round((dimensions.height - sourceHeight) / 2),
-    sourceWidth: dimensions.width,
-    sourceHeight
-  }
-}
-
-function displayCanvasSize(crop: SourceCrop): CanvasSize {
-  const scale = Math.min(1, displayMaxWidth / crop.sourceWidth, displayMaxHeight / crop.sourceHeight)
-  const scaledWidth = Math.max(4, Math.floor(crop.sourceWidth * scale))
-  const aspectUnits = Math.max(1, Math.floor(scaledWidth / 4))
+export function displayCanvasSize(dimensions: ImageDimensions): CanvasSize {
+  const scale = Math.min(
+    1,
+    displayMaxWidth / dimensions.width,
+    displayMaxHeight / dimensions.height
+  )
 
   return {
-    width: aspectUnits * 4,
-    height: aspectUnits * 3
+    width: Math.max(1, Math.round(dimensions.width * scale)),
+    height: Math.max(1, Math.round(dimensions.height * scale))
   }
 }
 
 async function encodeVariant(
   image: ImageBitmap,
-  crop: SourceCrop,
+  sourceDimensions: ImageDimensions,
   canvasSize: CanvasSize,
   qualities: number[],
   maxSizeBytes: number
@@ -167,10 +128,10 @@ async function encodeVariant(
 
   context.drawImage(
     image,
-    crop.sourceX,
-    crop.sourceY,
-    crop.sourceWidth,
-    crop.sourceHeight,
+    0,
+    0,
+    sourceDimensions.width,
+    sourceDimensions.height,
     0,
     0,
     canvasSize.width,

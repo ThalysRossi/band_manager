@@ -103,16 +103,28 @@ func TestPhotoMetadataRejectsOversizedFullVariant(t *testing.T) {
 	}
 }
 
-func TestPhotoMetadataRejectsInvalidDisplayAspectRatio(t *testing.T) {
+func TestPhotoMetadataAcceptsPortraitDisplayVariant(t *testing.T) {
 	t.Parallel()
 
 	photo := validPhotoMetadata()
-	photo.Display.Width = 1000
-	photo.Display.Height = 1000
+	photo.Display.Width = 720
+	photo.Display.Height = 960
+
+	err := ValidatePhotoMetadata(photo)
+	if err != nil {
+		t.Fatalf("expected portrait display variant to be valid: %v", err)
+	}
+}
+
+func TestPhotoMetadataRejectsOversizedDisplayVariant(t *testing.T) {
+	t.Parallel()
+
+	photo := validPhotoMetadata()
+	photo.Display.Height = 961
 
 	err := ValidatePhotoMetadata(photo)
 	if err == nil {
-		t.Fatal("expected display aspect ratio validation error")
+		t.Fatal("expected display variant dimension validation error")
 	}
 }
 

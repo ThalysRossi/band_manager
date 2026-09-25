@@ -56,7 +56,6 @@ Monorepo:
 
 - pnpm workspace.
 - Separate frontend and backend apps.
-- Shared OpenAPI contract and generated client.
 - GitHub Actions for CI.
 
 Frontend:
@@ -88,8 +87,6 @@ Backend:
 - sqlc.
 - goose migrations.
 - Redis-compatible store for rate limiting/idempotency where available.
-- OpenAPI.
-- oapi-codegen.
 - Docker.
 - Clean Architecture-inspired layering without excessive OOP-style ceremony.
 
@@ -146,14 +143,10 @@ band-manager/
         transport/
         platform/
       migrations/
-      openapi/
       test/
       Dockerfile
       go.mod
   packages/
-    api-contract/
-      openapi.yaml
-      generated/
     config/
       eslint/
       prettier/
@@ -471,7 +464,6 @@ CI must block merges on:
 - failing tests
 - package audit failures
 - backend test failures
-- OpenAPI generation drift
 
 ## First task
 

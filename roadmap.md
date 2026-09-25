@@ -86,7 +86,6 @@ Payment feasibility affects backend design, checkout state machine, inventory re
 - Docker Compose.
 - PostgreSQL.
 - Redis or Redis-compatible fallback.
-- OpenAPI package.
 - Shared config packages.
 - GitHub Actions baseline.
 
@@ -129,7 +128,6 @@ Deploy from one monorepo to separate services.
 
 - Frontend service watches/builds `apps/web`.
 - Backend service watches/builds `apps/api`.
-- Shared OpenAPI/codegen is validated in GitHub Actions.
 - Backend Docker build may use repository root as context when needed.
 - Frontend receives backend URL through environment variable.
 - Backend receives frontend allowed origin through environment variable.
@@ -202,7 +200,6 @@ For alpha, staging and production may use the same provider family but different
 - Inventory domain rules.
 - Inventory use cases.
 - Inventory HTTP routes.
-- OpenAPI paths.
 - Backend tests.
 
 ### Exit criteria
@@ -263,7 +260,6 @@ For alpha, staging and production may use the same provider family but different
 - Financial reports API.
 - Calendar API.
 - Account-management API contracts needed for alpha operations.
-- OpenAPI coverage for every backend route.
 - Backend tests for new endpoint behavior.
 
 ### Deliverables
@@ -271,7 +267,6 @@ For alpha, staging and production may use the same provider family but different
 - Report API.
 - Calendar API.
 - Account-management routes where needed.
-- OpenAPI updates.
 - Backend tests.
 
 ### Exit criteria

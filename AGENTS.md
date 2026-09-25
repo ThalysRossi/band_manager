@@ -33,8 +33,6 @@ Implement the application feature-by-feature, separating backend and frontend co
 - Create and maintain project structure.
 - Implement backend use cases.
 - Implement frontend features.
-- Maintain OpenAPI contracts.
-- Generate clients/types.
 - Write tests before implementation for new business behavior.
 - Keep Docker/local development working.
 - Update docs when architecture or behavior changes.
@@ -49,7 +47,7 @@ For each feature:
 4. Implement minimal code.
 5. Run relevant tests.
 6. Refactor.
-7. Update docs and OpenAPI if needed.
+7. Update docs if architecture or behavior changes.
 
 ### Backend implementation rules
 
@@ -61,8 +59,6 @@ Use:
 - pgx
 - sqlc
 - goose
-- OpenAPI
-- oapi-codegen
 
 Follow this dependency direction:
 

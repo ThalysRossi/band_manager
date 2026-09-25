@@ -13,7 +13,6 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter web cypress:run",
     "audit": "pnpm audit",
-    "codegen": "pnpm --filter api-contract generate",
     "ci": "pnpm lint && pnpm format && pnpm test && pnpm audit"
   },
   "devDependencies": {

@@ -102,7 +102,6 @@ band-manager/
     web/      # React/Vite frontend
     api/      # Go backend
   packages/
-    api-contract/
     i18n/
     config/
 ```
@@ -113,19 +112,17 @@ Deployment services should be configured with root directories or build commands
 |---|---|---|
 | Frontend | `apps/web` | Build Vite app and publish static assets |
 | Backend | `apps/api` | Build/run Go API or Docker image |
-| Shared OpenAPI | `packages/api-contract` | Used during CI/codegen, not deployed alone |
 
 If a deploy provider cannot see shared packages when `rootDir` is set, use one of these patterns:
 
 1. Build from repository root with service-specific commands.
 2. Use Docker with repository root as context and `apps/api/Dockerfile`.
-3. Copy generated artifacts into each app during CI.
-4. Keep shared code minimal and generated.
+3. Keep the browser API functions and Go HTTP handlers small and explicit.
 
 Preferred for this project:
 
 - Frontend deploys from `apps/web`.
-- Backend deploys with Docker using root build context so it can access shared OpenAPI files.
+- Backend deploys with Docker using repository root as build context where required.
 - GitHub Actions validates the entire monorepo before deploy.
 
 ## 4. Free/low-cost alpha deployment options
@@ -204,7 +201,6 @@ Suggested root scripts:
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter web cypress:run",
     "audit": "pnpm audit",
-    "codegen": "pnpm --filter api-contract generate",
     "ci": "pnpm lint && pnpm format && pnpm test && pnpm audit"
   }
 }
@@ -246,7 +242,6 @@ apps/api/
       logger/
       clock/
   migrations/
-  openapi/
   test/
 ```
 
@@ -276,8 +271,6 @@ Use:
 - pgx
 - sqlc
 - goose
-- OpenAPI
-- oapi-codegen
 - Redis-compatible store
 - Docker
 
@@ -630,13 +623,12 @@ Required checks:
 - backend gofmt/go vet
 - backend tests
 - backend build
-- OpenAPI/codegen drift check
 - Cypress critical tests when feasible
 
 Path filters:
 
 - Frontend workflow triggered by `apps/web/**`, `packages/**`, `pnpm-lock.yaml`.
-- Backend workflow triggered by `apps/api/**`, `packages/api-contract/**`.
+- Backend workflow triggered by `apps/api/**`.
 - Full workflow triggered by PR to main.
 
 ## 17. Implementation sequence
@@ -671,7 +663,6 @@ Path filters:
 - Auth middleware placeholder.
 - PostgreSQL connection.
 - Redis/idempotency abstraction.
-- OpenAPI skeleton.
 - Migration setup.
 
 ### Step 4 — Auth integration
@@ -706,7 +697,6 @@ Path filters:
 - Financial reports API.
 - Calendar API.
 - Account-management API contracts needed for alpha operations.
-- OpenAPI paths and schemas for every backend route.
 - Backend tests.
 
 ### Step 8 — Frontend foundation

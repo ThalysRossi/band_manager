@@ -4,7 +4,7 @@ This is a POC that will be discarded after validation in favour of organic hand 
 
 Band Manager is a mobile-first web app for Brazilian underground bands to manage merch inventory and merch booth sales.
 
-The alpha is organized as a monorepo with a React/Vite frontend, Go API backend, shared OpenAPI contract, and local PostgreSQL/Redis dependencies.
+The alpha is organized as a monorepo with a React/Vite frontend, Go API backend, and local PostgreSQL/Redis dependencies.
 
 ## Workspace
 
@@ -13,7 +13,6 @@ apps/
   api/      Go backend
   web/      React frontend
 packages/
-  api-contract/
   config/
   i18n/
 docs/
